@@ -1,12 +1,14 @@
 # Syriacar — Final UI/UX Implementation Specification for Replit
 
 **Version:** 1.3
-**Basis:** SRS Syriacar v1.4 + approved UI/UX decisions + DB/ERD v2.1
+**Basis:** reconciled SRS Syriacar v1.4 + approved product-owner decisions + DBMS v2.2
 **Target:** Replit implementation of the frontend/UI only
 **Language:** Arabic only
 **Direction:** RTL
 **Platform:** Web PWA, Mobile-First
 **Launch scope:** صحنايا، ريف دمشق
+
+**Final reconciliation — 2026-10-03:** documentation only. القواعد أدناه متسقة مع SRS/DBMS؛ لا تنفيذ ضمن هذه المصالحة. OTP تلقائي hash-only مع مراقبة نتائج الإرسال بلا دعم شفهي؛ المحلية اليدوية إلزامية للفحص، وwork_days مصدر ساعات العمل الوحيد.
 
 ### سجل التغييرات من v1.2 إلى v1.3
 
@@ -24,8 +26,8 @@
 
 | # | الشاشة/القسم | التغيير |
 |---|---|---|
-| 1 | O-06b — OTP المعلَّق | إضافة شرط SQL الدقيق لتحديد السجلات المعروضة |
-| 2 | O-06b — OTP المعلَّق | توضيح: زر «تم الاتصال» يُحدِّث `handled_at` و`handled_by` + إخفاء السجلات المعالجة |
+| 1 | O-06b — تعذّر إرسال OTP | مصالحة نهائية: العرض من outcomes المحفوظة بعد محاولتين، لا الوقت وحده |
+| 2 | O-06b — تعذّر إرسال OTP | قراءة فقط؛ إزالة إجراء الاتصال اليدوي وحقوله |
 | 3 | S-04 — CSV Export | توضيح مصدر عمود المحافظة: join مختلف لـinspection vs towing |
 
 ---
@@ -36,7 +38,7 @@
 |---|---|---|
 | 1 | O-02 — Providers | إضافة حقل «رقم واتساب» (`whatsapp_number`) إلزامي في نموذج إنشاء/تعديل المزود |
 | 2 | O-02 — Providers | إخفاء حقول capabilities (brands/year_categories/fuel_types/vehicle_categories) عند service_type=towing |
-| 3 | O-06 — Notification Timeline | إضافة O-06b: section «OTP معلَّق» في قسم الإشعارات |
+| 3 | O-06 — Notification Timeline | O-06b: مراقبة تعذّر إرسال OTP، لا قناة OTP بديلة |
 | 4 | U-11, U-15, U-16 | توضيح: wa.me يستخدم `providers.whatsapp_number` لا `phone` |
 | 5 | §7 Data → UI Rules (Providers) | إضافة: whatsapp_number لا يُعرَض للمستخدم النهائي |
 | 6 | §13 Data adapters | إضافة `whatsapp_number` في providers adapter |
@@ -225,7 +227,7 @@ Desktop/tablet: Side Navigation.
 الماركات
 القوائم
 قوالب الرسائل
-الإشعارات  ← يشمل OTP المعلَّق (O-06b)
+الإشعارات  ← يشمل تعذّر إرسال OTP (O-06b)
 التنبيهات
 المركبات
 Audit Log
@@ -239,6 +241,7 @@ Mobile: collapsible Drawer.
 مؤشرات الأداء
 موظفو Operations
 التقارير
+رقم التواصل
 ```
 
 ---
@@ -259,7 +262,7 @@ Examples:
 - إنشاء حساب / دخول / أبلغ المزود / أرسل موقعي / حفظ
 - Verified/Rejected actions in Operations
 - تصدير CSV
-- **تم الاتصال** (في O-06b)
+- O-06b read-only؛ لا CTA لمعالجة OTP يدوياً
 
 Destructive actions use confirmation.
 
@@ -327,7 +330,9 @@ Success → OTP.
 رقم الهاتف → 6 digit OTP → مؤقت 10 دقائق → إعادة الإرسال
 ```
 
-Rules: 6 digits. Valid 10 minutes. Max 5 attempts. Resend every 2 minutes after expiry.
+Rules: 6 digits. Valid 10 minutes from current code's send attempt. Max 5 verification attempts. Resend enabled after expiry/verification invalidation and at least 2 minutes since last send attempt; new challenge invalidates old one. Account remains inactive until correct OTP.
+
+Automatic send: first attempt + one retry after failure/unknown result and 5 seconds, at most two attempts, per SRS REQ-WA-006–009. Retry generates a new code/hash and invalidates the old code; backend supplies current expiry without exposing code/hash. User message distinguishes «قُبل طلب الإرسال» from confirmed delivery; API acceptance alone never becomes «تم التوصيل». Failure: «تعذّر إرسال رمز التحقق. ستتم إعادة المحاولة تلقائياً.» ثم بعد الاستنفاد «تعذّر إرسال رمز التحقق. يمكنك إعادة الإرسال عند إتاحة الزر.» Unknown: «تعذّر تأكيد الإرسال.» No staff-verbal fallback. Cooldown/expiry is enforced by backend, not UI alone.
 
 ---
 
@@ -377,15 +382,13 @@ VIN must not appear.
 **Source:** FR-INS-001–005
 
 ```text
-عنوان → [ استخدام موقعي ]
-↓
-GPS
-├── Granted → Map
-└── Denied / unavailable → Governorate + Region
+المحافظة → المنطقة التابعة لها → متابعة → نتائج المحلية المختارة
+خيار GPS اختياري للعرض فقط؛ لا يُلغي اختيار المحلية
 ```
 
-If map loading > 5 seconds → Text Provider List.
-User location must not be persisted.
+اختيار المحلية إلزامي دائماً؛ region قائمة تابعة للمحافظة وتُمسح عند تغييرها. خيار «استخدام موقعي» يدعم عرض الخريطة فقط ولا يستبدل الاختيار ولا reverse geocoding.
+
+If map loading >5 seconds → Text Provider List for the same selected locality. GPS coordinates must not be persisted; selected inspection_governorate_id/inspection_region_id must be persisted on confirmed inspection requests.
 
 ---
 
@@ -393,7 +396,7 @@ User location must not be persisted.
 
 Primary mode: Map (OpenStreetMap / Leaflet).
 
-Map: open providers only; suitable provider = distinct marker (registered); all open = same treatment (guest).
+Map: active/open inspection providers in selected governorate + region only; suitable marker (registered) also requires matching saved vehicle capabilities; guest sees all active/open in that locality equally. No distance/radius matching.
 
 Fallback: text list — business name + region + phone.
 
@@ -425,9 +428,11 @@ Mobile → Bottom Sheet. Desktop → Side Sheet/Panel. No booking CTA.
 ملخص العملية → بيانات/تنبيه التواصل → [ تأكيد ] [ إلغاء ]
 ```
 
+Guest first enters name/phone then sees the confirmation/disclosure. Registered uses account identity and selected saved vehicle.
+
 On confirm:
-1. create `service_request`
-2. create `notification`
+1. first notification creates `service_request` with inspection locality; later providers reuse the same request
+2. create `notification` transactionally with its parent; no records on render/cancel
 3. open `wa.me/{providers.whatsapp_number}?text={encoded_message}` ← **يستخدم whatsapp_number**
 4. user sends message manually
 5. show provider **phone** number (للاتصال الهاتفي)
@@ -438,12 +443,14 @@ Guest: show disclosure about name/phone being sent/stored.
 
 ## U-12 — No Matching Inspection Provider
 
-Message: `لا يوجد مزود مطابق في نطاقك — يمكنك توسيع البحث أو التواصل معنا على {system_config.contact_phone}`
+Message: `لا يوجد مزود مطابق في نطاقك — يمكنك التواصل معنا على {system_config.contact_phone}`
 
 الرقم يُقرأ من `system_config.contact_phone` — لا hardcode في الواجهة.
 يُعرَض الرقم داخل LTR container (رقم هاتف).
 
 Do not invent additional services.
+
+Guest no-match: inspection → governorate/region → guest name/phone → confirmation → create no_match service_request with locality. No provider-selection step, notification, search expansion, or wa.me in this path. Registered: same locality + saved vehicle/account identity → confirmation → no_match request. Render/refresh alone never creates a request.
 
 ---
 
@@ -462,7 +469,7 @@ Guest: both empty.
 
 **List only. No map.**
 
-Section A: `مناسب لمشكلتك` — providers covering origin + destination.
+Section A: `مناسب لمشكلتك` — active/open towing providers covering both origin + destination.
 **ترتيب القسم الأول:** مزود مقره = محافظة الانطلاق أولاً ← مقره = محافظة الوصول ثانياً ← الباقون عشوائياً. الترتيب لا يُعرَض كـlabel — هو ترتيب العرض فقط.
 Fixed warning: `التغطية الدقيقة داخل المحافظة تُحدَّد بالاتصال مع المزود.`
 
@@ -470,7 +477,7 @@ Fixed warning: `التغطية الدقيقة داخل المحافظة تُحد
 `لا يوجد مزود يغطي هذا المسار — يمكنك التواصل معنا على {system_config.contact_phone}`
 الرقم داخل LTR container. القسم الثاني يبقى مرئياً.
 
-Section B: `باقي المزودين` — visible even if Section A is empty.
+Section B: `باقي المزودين` — active/open towing providers not covering both governorates; visible even if Section A is empty. Closed/non-active providers never appear in either section.
 
 ---
 
@@ -478,7 +485,7 @@ Section B: `باقي المزودين` — visible even if Section A is empty.
 
 Show: الاسم التجاري — المحافظات التي يغطيها — نوع السطحة — رقم الهاتف — أبلغ المزود
 
-On «أبلغ المزود»: opens `wa.me/{providers.whatsapp_number}?text=...` ← **يستخدم whatsapp_number**
+On «أبلغ المزود»: guest enters name/phone before confirmation; first confirmation creates service_request + notification transactionally then opens wa.me/{providers.whatsapp_number}. Later providers reuse the same request and identity. Any notified Section A provider → request matched; all notified Section B providers → no_match. Status exists only on request; no per-notification status, and later B notifications do not downgrade matched.
 
 Mobile → Bottom Sheet. Desktop → Side Sheet/Panel.
 
@@ -503,6 +510,8 @@ GPS
 └── Failure → Governorate → Region manual selection
 ```
 
+After manual selection → open WhatsApp with governorate + region names in message; no geocoding. User presses Send in either branch. towing_location: `Syriacar — [الاسم] — سطحة — موقعي: [الموقع]`; location is Google Maps URL when GPS exists, otherwise `محافظة [اسم المحافظة]، منطقة [اسم المنطقة]`. Manual region belongs to selected governorate. It describes location sharing, not a change to origin/destination; no coordinate history.
+
 Fixed towing warning: `التواصل يعتمد على استجابة المزود، والإشعار ليس حجزًا ولا ضمانًا.`
 
 ---
@@ -525,11 +534,12 @@ Read-only: no edit, no delete. Empty state: neutral.
 
 ## P-03 — Provider Availability
 
-Fields: Work days — Start time — End time — «لا أعمل اليوم»
+Fields: per-day Work days entries (enabled + Start time + End time for each day) — «لا أعمل اليوم». Source is work_days only; no work_start/work_end operational fields. Enabled day requires one valid same-day interval; disabled day has null start/end.
 
 Default: every day except Friday, 08:00–20:00.
 
 `is_open` is derived; never render as editable.
+Calculated from selected Damascus weekday's enabled/start/end + today's closure override. Preview and matching use the same rule.
 `today_closed_date` never directly edited by provider.
 **Reset تلقائي:** `today_closed` يعود إلى `false` تلقائياً عند 00:00 Asia/Damascus بواسطة scheduled job — لا يحتاج المزود لفعل شيء في اليوم التالي.
 
@@ -635,7 +645,7 @@ Sections:
 - GPS / location_lat + location_lng (اختياري)
 
 **5. جدول العمل**
-- الأيام + أوقات البدء والنهاية (إلزامي)
+- work_days: enabled + وقت البدء والنهاية لكل يوم؛ نفس عقد P-03، بلا حقول ساعات عامة منفصلة (إلزامي)
 
 **6. القدرات — تظهر فقط عند service_type = inspection**
 - مجموعات الماركات
@@ -687,31 +697,32 @@ Additional fields: note + operator + time.
 
 ---
 
-## O-06b — OTP المعلَّق (ضمن قسم الإشعارات)
+## O-06b — تعذّر إرسال OTP (ضمن قسم الإشعارات)
 
-**السياق:** عند فشل whapi يبقى سجل OTP بحالة pending (consumed_at IS NULL ولم يُستخدَم). هذا القسم يُمكِّن موظف Operations من الاتصال يدوياً.
+**السياق:** بعد استنفاد محاولتي الإرسال تُعرض failed/unknown outcomes المحفوظة أو provider failed للمحاولة الحالية. صلاحية challenge ليست حالة إرسال؛ لا استنتاج فشل من عدم استخدام OTP.
 
 ### الموضع
-Badge/section منفصل داخل شاشة O-06 (الإشعارات) — يظهر فقط عند وجود سجلات pending.
+Badge/section منفصل داخل O-06 يظهر فقط عند وجود سجلات تستوفي الفلتر أدناه؛ للقراءة فقط.
 
 ### المحتوى
 ```text
-[ ! ] OTP معلَّق (N)
+[ ! ] تعذّر إرسال OTP (N)
 ↓
 جدول/قائمة:
 - رقم الهاتف (LTR container)
 - وقت الطلب (created_at)
-- [ تم الاتصال ]
+- نتيجة الإرسال / السبب المنقَّح
 ```
 
 ### القواعد
 - **الكود لا يُعرَض أبداً** — أمان.
-- السجلات المعروضة: `consumed_at IS NULL AND expires_at > NOW() AND last_sent_at < NOW() - INTERVAL '5 seconds'` — أي: لم يُستهلَك + ما زال صالحاً + مرّت محاولة الإرسال التلقائي.
-- الزر «تم الاتصال» يُحدِّث `handled_at = NOW()` و`handled_by = current_ops_user_id` — لا يُغيِّر `code_hash`.
-- سجل تمّت معالجته (`handled_at IS NOT NULL`) لا يظهر في القائمة.
+- الفلتر: `consumed_at IS NULL AND expires_at > NOW() AND send_attempt_count = 2 AND retry_at IS NULL AND (send_status IN ('failed','unknown') OR delivery_status = 'failed')`.
+- لا كود أو hash أو message body، ولا إجراء اتصال/استرجاع/إرسال يدوي. لا OTP شفهي بعد المحاولتين أو في أي حالة.
+- api_accepted/pending لا يظهران وحدهما كفشل؛ unknown = «تعذّر تأكيد الإرسال»، لا «فشل التوصيل». delivered/read دليل الوصول فقط من status موثوق.
+- الاستهلاك/الانتهاء أو تصحيح النتيجة يزيل السجل؛ retry تلقائي محدود ومؤقت ومحفوظ في backend، ثم إعادة الإرسال من المستخدم حسب U-03.
 - رقم الهاتف يُعرَض في LTR container.
 - Badge العدد يختفي عند حل جميع السجلات.
-- Empty state: `لا توجد سجلات OTP معلَّقة`.
+- Empty state: `لا توجد محاولات إرسال OTP متعثرة`.
 - الصلاحية: operations + super_admin.
 
 ---
@@ -787,6 +798,14 @@ Do not build a column-picker. Backend contract:
 | رقم الهاتف | users.phone أو service_requests.guest_phone |
 | اسم المزود | providers.business_name (via first notification JOIN) |
 
+First notification is earliest created_at, with id as tie-breaker; same first notification supplies inspection governorate/provider name. no_match inspection without notifications has blank provider name/governorate in this existing provider-based export; stored inspection locality is not substituted into it. Preserve the approved seven columns.
+
+---
+
+## S-05 — System Contact Phone
+
+**Source:** FR-SAD-005؛ Super Admin فقط. مدخل «رقم التواصل» داخل LTR container + حفظ. المصدر system_config.key=contact_phone؛ E.164 إلزامي، يُحدَّث value/updated_by/updated_at ويُسجَّل audit إداري. States: loading/loaded/saving/success/validation error/server error. operations لا يرى رابط التعديل ولا يملك صلاحية backend. لا CRUD للمفاتيح أو نظام إعدادات عام.
+
 ---
 
 # 6. Component States
@@ -857,18 +876,25 @@ Never show raw JSON syntax.
 ## Message Templates
 Operations: key + Arabic template + updated at.
 
+## Service Requests / OTP
+Inspection locality is required and region must belong to governorate; towing has NULL inspection locality. Request-level matching_status only; notifications have no matching status. Guest no-match has no notification. Operations sees sanitized send outcomes, never code_hash, code, full provider payload, or message body.
+
 ---
 
 # 8. Routing / Flow Rules
 
 ## Guest inspection
-Home → فحص مركبة → Location → Results → Provider Card → Confirm Notify → WhatsApp (wa.me/whatsapp_number) → Provider Phone
+Home → فحص مركبة → Governorate/Region → Results → Provider Card → Guest Name/Phone → Confirm Notify → WhatsApp (wa.me/whatsapp_number) → Provider Phone
+
+No match branch: Governorate/Region → Guest Name/Phone → Confirmation → no_match request; no provider selection or WhatsApp.
 
 ## Registered inspection
-Home → فحص مركبة → Location → Select Saved Vehicle → Results → Suitable Provider → Provider Card → Confirm Notify → WhatsApp (wa.me/whatsapp_number) → Provider Phone
+Home → فحص مركبة → Governorate/Region → Select Saved Vehicle → Results → Suitable Provider → Provider Card → Confirm Notify → WhatsApp (wa.me/whatsapp_number) → Provider Phone
+
+No match branch: selected locality/vehicle + account identity → confirmation → no_match request; no provider selection.
 
 ## Guest towing
-Home → سطحة → Origin → Destination → Results → Provider Card → Notify → WhatsApp (wa.me/whatsapp_number) → Send Location
+Home → سطحة → Origin → Destination → Results → Provider Card → Guest Name/Phone → Confirm Notify → WhatsApp (wa.me/whatsapp_number) → Send Location
 
 ## Registered towing
 Home → سطحة → Origin (prefilled if home_governorate) → Destination → Results → Provider Card → Notify → WhatsApp (wa.me/whatsapp_number) → Send Location
@@ -880,7 +906,7 @@ Provider Login → Notifications or → Provider Management
 Operations Login → Dashboard sections → Lists / Providers / Notifications (incl. O-06b) / Vehicles / Audit
 
 ## Super Admin
-Super Admin Login → Operations Users / KPIs / CSV Export
+Super Admin Login → Operations Users / KPIs / CSV Export / Contact Phone (S-05)
 
 ---
 
@@ -901,7 +927,7 @@ Super Admin Login → Operations Users / KPIs / CSV Export
 # 10. Security / Privacy UI Rules
 
 - Password fields use password input semantics.
-- OTP never displayed after submission.
+- OTP never exposed by server to any UI or staff, nor recoverable; only the user's typed input appears in U-03. Hash-only persists; outbound body is transient and excluded from logs/audit.
 - **whatsapp_number never displayed to end users — used only for internal wa.me link construction.**
 - No API tokens in frontend UI/config.
 - Do not expose raw internal IDs.
@@ -965,7 +991,7 @@ BottomSheet / SideSheet / ConfirmDialog
 Toast / Skeleton / EmptyState
 DataTable / Pagination / Filters
 Timeline / KPI Card / KPI Chart
-OtpPendingSection  ← جديد (O-06b)
+OtpSendFailureSection  ← O-06b (read-only)
 ```
 
 ## Data adapters
@@ -974,10 +1000,10 @@ Use typed adapters for:
 - users
 - vehicles
 - providers (يشمل whatsapp_number — **لا يُعرَض في UI — يُستخدَم فقط لبناء wa.me**)
-- service_requests
+- service_requests (inspection_governorate_id/inspection_region_id + parent matching_status)
 - notifications
 - provider_push_subscriptions
-- otp_verification_challenges (يشمل pending status للـO-06b)
+- otp_verification_challenges (sanitized send_status/delivery_status/send_attempt_count for O-06b; no code/hash/body in adapter)
 - provider_coverage
 - provider capabilities
 - reference lists
@@ -985,6 +1011,7 @@ Use typed adapters for:
 - audit_log
 - provider_edit_requests
 - message_templates
+- system_config (contact_phone only; editable in S-05 by Super Admin)
 
 ---
 
@@ -997,7 +1024,7 @@ A Replit implementation is considered UI-complete only when:
 3. RTL correct across all forms, tables, sheets, navigation, dialogs.
 4. Mobile works at 320px.
 5. Touch targets ≥44×44px.
-6. Inspection: Map-first + mandatory fallback list.
+6. Inspection: mandatory governorate/region, then map results + fallback list for same locality; GPS never replaces selection.
 7. Towing: list-only results.
 8. Provider cards: Bottom Sheet (mobile), Side Sheet (desktop).
 9. Registered user: saved-vehicle flow for inspection.
@@ -1008,23 +1035,30 @@ A Replit implementation is considered UI-complete only when:
 14. Provider notifications read-only.
 15. Operations: pagination not infinite scroll.
 16. Duplicate alert computed and non-blocking.
-17. Super Admin: only defined KPI families + CSV export.
+17. Super Admin: only defined KPI families + CSV export + minimal contact_phone screen (besides defined user management).
 18. No forbidden feature visible or reachable.
 19. **O-02: حقل «رقم واتساب» موجود وإلزامي في نموذج إنشاء/تعديل المزود.**
 20. **O-02: حقول capabilities مخفية عند service_type=towing.**
-21. **O-06b: section OTP المعلَّق موجود ضمن الإشعارات — يعرض الرقم لا الكود.**
+21. **O-06b: read-only failures after two attempts from persisted outcomes; no code/hash/body/verbal support/recovery or staff resend. api_accepted/pending do not imply failure or delivery.**
 22. **wa.me في U-11/U-15/U-16 يستخدم providers.whatsapp_number لا phone.**
 23. **location_url** يُعرَض في O-02 فقط كـlink خارجي.
     لا يظهر في أي شاشة مستخدم أو مزود.
 24. **U-12 وU-14:** رسالة no_match تتضمن رقم الفريق مقروءاً من `system_config.contact_phone` — لا رقم مُضمَّن في الكود.
 25. **U-14:** ترتيب القسم الأول يتبع قاعدة: مقر الانطلاق أولاً ← مقر الوصول ← عشوائي.
+26. **Guest inspection no-match:** locality → name/phone → confirmation → no_match request; no provider selection/notification/search expansion; no request on render.
+27. **Inspection persistence:** both locality IDs required for inspection, NULL for towing; region validated against governorate; no reverse geocoding or stored GPS.
+28. **Towing:** both sections active/open; any notified A → request matched, all B → no_match; multiple notifications reuse one request; no per-notification match status.
+29. **U-16:** GPS URL or governorate+region text in towing_location; both branches open WhatsApp for manual Send.
+30. **P-03:** per-day work_days is sole schedule authority, including closed-day override; no scalar schedule fields.
+31. **U-02/U-03/U-05:** inactive until correct OTP; delete anonymizes name/phone to NULL while keeping non-deleted integrity.
+32. **S-05:** contact_phone only, E.164, Super Admin-only frontend/backend; no general settings system.
 ---
 
 # 15. Source Baseline
 
 ## Primary
 - SRS Syriacar v1.4.
-- DB/ERD v2.1.
+- DBMS v2.2 (reconciled).
 - Approved UI/UX decision set.
 
 ## Relevant SRS areas

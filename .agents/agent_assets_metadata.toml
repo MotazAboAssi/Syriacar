@@ -1,0 +1,44 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "Fu1eizUHAcC_Fxi5By4mq"
+uri = "file://attached_assets/SRS_Syriacar_v1_4_1791055282701.md"
+type = "text"
+title = "Reconciled SRS v1.4"
+description = "Final product requirements aligned with the confirmed OTP, inspection, towing, availability and administration decisions."
+logical_id = "89d375cd-c94a-42fd-b076-09c43fac51f9"
+content_hash = "sha256:42d0f0fdeaa0194ee350a027416ec0729d6ced6748360645c822ce1934f88a3a"
+size = 63374
+mtime_ms = 1791057632414
+storage_uri = "gcs://replit-rams-assets-kirk/rams/assets/repl:425e664a-7742-4dfe-b607-b653a17726d1/89d375cd-c94a-42fd-b076-09c43fac51f9/1196f0d3-e73f-4f56-88ed-b3171b4aca9c"
+storage_version_token = "1791057698638787"
+content_type = "text/markdown"
+
+[[outputs]]
+id = "-DIpEsy6SQ6bVCYBytvUW"
+uri = "file://attached_assets/Syriacar_DBMS_Engineer_v2_2_1791055282700.md"
+type = "text"
+title = "Reconciled DBMS v2.2"
+description = "Logical schema and integrity rules aligned with the final product decisions; no migrations created."
+logical_id = "2f02562f-5bd6-4744-b967-89f2d15f4389"
+content_hash = "sha256:f9762826aea123cae3ed68ba34fef9832a824202b4a6b93f24d31bc61a720980"
+size = 32458
+mtime_ms = 1791057635846
+storage_uri = "gcs://replit-rams-assets-kirk/rams/assets/repl:425e664a-7742-4dfe-b607-b653a17726d1/2f02562f-5bd6-4744-b967-89f2d15f4389/957a801f-c7d7-4ed8-b0bb-2cb83169bfe9"
+storage_version_token = "1791057699251912"
+content_type = "text/markdown"
+
+[[outputs]]
+id = "eRVop5sLOR5UU0yoK4IuO"
+uri = "file://attached_assets/Syriacar_Replit_UIUX_Final_v1_3_1791055282701.md"
+type = "text"
+title = "Reconciled UI/UX v1.3"
+description = "Updated flows, read-only OTP failure monitoring, contact-phone screen, and acceptance criteria."
+logical_id = "ed9cb3b8-be24-4209-879a-52679f98f17a"
+content_hash = "sha256:1ec960332ea774a8da98c56e56132323c66490939410a75ad2dbf54fe573c351"
+size = 39647
+mtime_ms = 1791057636758
+storage_uri = "gcs://replit-rams-assets-kirk/rams/assets/repl:425e664a-7742-4dfe-b607-b653a17726d1/ed9cb3b8-be24-4209-879a-52679f98f17a/862cf5e3-2794-4067-a14a-22b24fb0c7dd"
+storage_version_token = "1791057699852735"
+content_type = "text/markdown"

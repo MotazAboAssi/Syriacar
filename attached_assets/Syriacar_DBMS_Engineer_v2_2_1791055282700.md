@@ -5,6 +5,8 @@
 **Gap resolution source:** Cross-document Compliance Review v2.2 — 2026-10-03
 **Scope:** Conceptual + Logical schema and ERD. DBMS: PostgreSQL 15+ (Replit Neon).
 
+**Final reconciliation — 2026-10-03:** SRS v1.4 + UI/UX v1.3 المُصالَحان وقرارات مالك المنتج النهائية. لا OTP شفهي؛ metadata للإرسال لا محتوى الرسالة؛ محلية الفحص محفوظة؛ work_days مصدر الساعات الوحيد. هذه الوثيقة وصف schema فقط، لا DDL أو migration منفذة.
+
 ---
 
 ## 1. Executive summary of changes from v2.1
@@ -13,18 +15,18 @@
 |---|---|---|
 | 1 | تحديث `Source of requirements` من `v1.2` إلى `v1.4` | مزامنة مع الإصدار الفعلي الحالي للـSRS |
 | 2 | إضافة schema كاملة لجدول **`system_config`** (كيان جديد #24) | FR-INS-015 + FR-TOW-006: رقم الفريق يُقرأ من DB لا hardcode |
-| 3 | إضافة حقلَي **`handled_at`** و**`handled_by`** إلى `otp_verification_challenges` | FR-OPS-013b + UIUX O-06b: زر «تم الاتصال» يكتب إليهما |
+| 3 | مصالحة نهائية: حقول نتائج الإرسال بدلاً من حقول الاتصال اليدوي | FR-OPS-013b + UIUX O-06b للقراءة فقط؛ لا استرجاع OTP |
 | 4 | توثيق schema **`message_templates`** كاملةً (بدلاً من «Unchanged from v2.0») | إزالة الإحالة لنسخة غير مرفقة |
 | 5 | تحديث Entity inventory من 23 إلى **24 كياناً** | إضافة `system_config` |
 | 6 | إضافة `system_config` إلى §4 Relationships + §6 Constraints + §12 Bootstrap | اتساق داخلي |
-| 7 | إضافة فهرس `otp_verification_challenges(handled_at)` إلى §8 | دعم استعلام O-06b |
+| 7 | فهارس نتائج الإرسال وretry_at | دعم مراقبة فشل الإرسال وإعادة المعالجة المحددة |
 
 ---
 
 ## 2. Entity inventory (24 entities)
 
 1. users
-2. otp_verification_challenges ← **تحديث: إضافة handled_at + handled_by**
+2. otp_verification_challenges ← **تحديث: metadata لمحاولتي إرسال فقط؛ hash-only**
 3. vehicles
 4. providers
 5. provider_coverage
@@ -56,14 +58,16 @@
 | Field | Type | Required | Key / Constraint |
 |---|---|---|---|
 | id | UUID | Yes | PK |
-| name | VARCHAR | Yes | → NULL on delete |
-| phone | VARCHAR | Yes | UNIQUE; E.164 (+963…); → NULL on delete |
+| name | VARCHAR | Conditional | NOT NULL if not deleted; NULL when anonymized |
+| phone | VARCHAR | Conditional | UNIQUE; E.164 (+963…); NOT NULL if not deleted; NULL when anonymized |
 | password_hash | VARCHAR | Yes | |
 | home_governorate_id | UUID | No | FK → governorates |
-| is_active | BOOLEAN | Yes | DEFAULT true |
+| is_active | BOOLEAN | Yes | DEFAULT false; activate only after correct OTP |
 | is_deleted | BOOLEAN | Yes | DEFAULT false |
 | created_at | TIMESTAMP | Yes | UTC |
 | last_active_at | TIMESTAMP | Yes | UTC |
+
+Row CHECK: non-deleted → name/phone NOT NULL؛ deleted → name/phone NULL وis_active=false. PostgreSQL UNIQUE(phone) يسمح بتعدد NULL للمحذوفين. حذف الحساب soft-delete/anonymization transactionally، لا حذف row أو الروابط الإحصائية.
 
 ---
 
@@ -80,19 +84,33 @@
 | max_attempts | SMALLINT | Yes | DEFAULT 5 |
 | created_at | TIMESTAMP | Yes | UTC |
 | last_sent_at | TIMESTAMP | Yes | UTC |
-| **handled_at** | **TIMESTAMP** | **No** | **UTC — يُملأ عند ضغط «تم الاتصال» في O-06b** |
-| **handled_by** | **UUID** | **No** | **FK → ops_users — من نفّذ الاتصال** |
+| send_attempt_count | SMALLINT | Yes | DEFAULT 0; range 0–2; independent of OTP verification attempt_count |
+| send_status | ENUM('pending','api_accepted','failed','unknown') | Yes | DEFAULT pending; current send attempt outcome |
+| delivery_status | VARCHAR | No | Latest current-attempt Whapi status; NULL = no information, not failure |
+| retry_at | TIMESTAMP | No | UTC; second-attempt due time; NULL after execution/expiry |
+| send_attempts | JSON | Yes | DEFAULT []; metadata for at most two attempts; no code/body/raw payload |
 
 Logical uniqueness rule: at most one active (consumed_at IS NULL AND expires_at > NOW) per (phone, purpose).
+
+تُفرض uniqueness المنطقية transactionally بقفل phone/purpose وإبطال challenge السابقة؛ لا partial UNIQUE يعتمد على NOW() المتغير. code_hash وحده يحفظ OTP؛ Operations لا يرى hash أو الكود ولا يستطيع استرجاعه. تُحذف حقول handled_at/handled_by والـFK القديم؛ لا workflow اتصال.
+
+send_attempts: array بعنصر لكل attempt_no (1/2)، attempted_at UTC، api_outcome (pending/api_accepted/failed/unknown)، http_status nullable، provider_sent nullable، provider_message_id nullable، provider_status/status_at nullable، error_code/error_reason nullable ومُنقَّحان. لا يُحفظ نص رسالة Whapi أو body استجابة/حدث كامل قد يحتوي OTP. آخر عنصر هو مصدر send_status/delivery_status، والتحديثات تُربط بالـmessage ID؛ لا تجعل أحداث محاولة قديمة الكود الحالي delivered.
+
+Status timestamps/order prevent duplicate or late events from regressing delivered/read to pending/sent or re-arming an exhausted retry. Missing/unparseable API success evidence maps to unknown, never assumed acceptance.
+
+عقد Whapi مطابق SRS REQ-WA-004–009: messages/text + Bearer، phone digits-only على adapter فقط. sent=true/message ID = api_accepted لا delivered؛ sent=false أو rejection أو provider failed = failed؛ timeout بلا نتيجة مؤكدة = unknown. pending/غياب callback لا يثبت الفشل. تُحفظ الحالات الفعلية failed/pending/sent/delivered/read/played/deleted كما وردت؛ delivered/read دليل الوصول. HTTPS وheader سرّي مُهيَّأ لcallbacks؛ معالجة متكررة آمنة.
+
+عند failed/unknown (أو provider failed) تُحدَّد retry_at بعد 5 ثوانٍ إن بقيت المحاولة الثانية والصلاحية. claim/update transactionally يمنع retry إضافي. المحاولة الثانية تولِّد كوداً جديداً في الذاكرة وتستبدل code_hash وتبطل القديم وتضبط expires_at عشر دقائق من المحاولة، بلا plaintext أو استرجاع وبلا reset لattempt_count. last_sent_at هو وقت بدء آخر محاولة لا وقت إثبات نجاحها. بعد الاستنفاد ينتظر المستخدم إعادة الإرسال وفق FR-ACC-006: بعد expiry/إبطال التحقق ومرور دقيقتين؛ challenge جديدة وعدّاد إرسال جديد.
 
 O-06b display filter:
 ```sql
 consumed_at IS NULL
 AND expires_at > NOW()
-AND last_sent_at < NOW() - INTERVAL '5 seconds'
-AND handled_at IS NULL
+AND send_attempt_count = 2
+AND retry_at IS NULL
+AND (send_status IN ('failed', 'unknown') OR delivery_status = 'failed')
 ```
-زر «تم الاتصال» يُنفِّذ: `UPDATE SET handled_at = NOW(), handled_by = :ops_user_id`. لا يُغيِّر code_hash. السجل يختفي من القائمة بعد التحديث.
+O-06b للقراءة فقط: الهاتف والوقت والنتيجة/السبب المنقح، لا كود/hash/body ولا إجراء «تم الاتصال» أو إعادة إرسال بواسطة Operations. unknown لا يُعرض كفشل توصيل مؤكد. يختفي السجل عند consumption/expiry أو تصحيح النتيجة. لا تظهر successful API acceptance أو pending وحدها كفشل.
 
 ---
 
@@ -131,8 +149,6 @@ AND handled_at IS NULL
 | location_lng | DECIMAL | No | |
 | location_url | VARCHAR | No | optional display/deep-link — internal use only (O-02) |
 | work_days | JSON | Yes | schema defined in §5 |
-| work_start | TIME | Yes | daily default start |
-| work_end | TIME | Yes | daily default end |
 | today_closed | BOOLEAN | Yes | DEFAULT false |
 | today_closed_date | DATE | No | NULL unless «لا أعمل اليوم» pressed |
 | specializations | JSON | No | free-form MVP |
@@ -145,6 +161,8 @@ Constraints:
 - `whatsapp_number` format: E.164 (+963…); validated at app level; never displayed to end users
 - `service_type='towing'` → capability junctions left empty; enforced at UIUX level (O-02 hides those fields)
 - `today_closed` reset: scheduled job daily at 00:00 Asia/Damascus (app-level, node-cron or equivalent)
+- work_days alone is authoritative: enabled/start/end of Damascus weekday + closure override; work_start/work_end removed from operational schema.
+- provider.region_id belongs to provider.governorate_id; validate in application.
 
 ---
 
@@ -198,16 +216,23 @@ All use composite PK:
 | guest_name | VARCHAR | No | NOT NULL if guest |
 | guest_phone | VARCHAR | No | NOT NULL if guest; E.164 |
 | vehicle_id | UUID | No | FK → vehicles |
+| inspection_governorate_id | UUID | Conditional | FK → governorates; required for inspection; NULL for towing |
+| inspection_region_id | UUID | Conditional | FK → regions; required for inspection; NULL for towing |
 | origin_governorate_id | UUID | No | FK → governorates; towing |
 | dest_governorate_id | UUID | No | FK → governorates; towing |
-| matching_status | ENUM('matched','no_match') | Yes | DEFAULT matched |
+| matching_status | ENUM('matched','no_match') | Yes | Explicit on creation; no assumed matched default |
 | created_at | TIMESTAMP | Yes | UTC |
 
 Conditional integrity (app-level):
 - registered → user_id NN, guest fields NULL
 - guest → user_id NULL, guest fields NN
-- inspection + registered → vehicle_id NN, origin/dest NULL
-- towing → origin NN, dest NN
+- inspection → inspection governorate/region NN and origin/dest NULL; registered inspection also requires vehicle_id
+- inspection_region_id belongs to inspection_governorate_id; application validation before matching/persistence
+- towing → origin/dest NN; inspection governorate/region NULL
+
+Guest no-match: inspection → governorate/region → guest name/phone → confirmation → no_match request; zero notifications, no provider-selection/search-expansion step. Locality is stored without GPS coordinates.
+
+One request → many notifications. First confirmation creates request + notification transactionally; further providers add notifications to same request. Tow Section A = active/open + both governorates covered; Section B = active/open without both. At each notification insert evaluate Section A membership then atomically OR it into request.matching_status: any A → matched; only B → no_match. matched is not downgraded by later B notifications or later provider profile/availability changes. No per-notification match status field. Same-request notifications retain the same service/user/vehicle/route context.
 
 ---
 
@@ -315,7 +340,7 @@ Conditional integrity (app-level):
 | ops_user_id | UUID | Yes — FK → ops_users |
 | action | VARCHAR | Yes |
 | entity_type | VARCHAR | Yes |
-| entity_id | UUID | Yes |
+| entity_id | VARCHAR | Yes — UUID string for ordinary entities; textual key for system_config |
 | old_value | JSON | No |
 | new_value | JSON | No |
 | created_at | TIMESTAMP | Yes — UTC |
@@ -351,6 +376,8 @@ Approval is transactional: validate → apply to provider_coverage → mark appr
 | updated_at | TIMESTAMP | Yes | UTC |
 
 Required bootstrap keys: `inspection_registered`, `inspection_guest`, `towing_registered`, `towing_guest`, `towing_location`.
+
+towing_location = `Syriacar — [الاسم] — سطحة — موقعي: [الموقع]`. Substitute Google Maps URL with lat/lng when GPS exists; otherwise `محافظة [اسم المحافظة]، منطقة [اسم المنطقة]`. No GPS history, reverse geocoding, additional template, or new location service.
 Initial `updated_by` = Super Admin id (inserted in bootstrap step 2).
 
 ---
@@ -365,7 +392,7 @@ Initial `updated_by` = Super Admin id (inserted in bootstrap step 2).
 
 Bootstrap row: `key = 'contact_phone'`, value = رقم الفريق (E.164).
 Purpose: رقم الفريق المُعرَّض في رسائل no_match (FR-INS-015, FR-TOW-006). يُقرأ بالمفتاح `contact_phone` — لا hardcode في الكود.
-Managed by: Super Admin (يملك صلاحية تعديل هذا الجدول).
+Managed by: Super Admin via UIUX S-05، لتعديل contact_phone الموجود فقط؛ لا CRUD مفاتيح أو نظام إعدادات عام. E.164 مع updated_by/updated_at وaudit إداري؛ entity_id يخزن key النصي.
 
 ---
 
@@ -394,7 +421,6 @@ ops_users (1) ──── (0..N) audit_log
 ops_users (1) ──── (0..N) providers [created_by]
 ops_users (1) ──── (0..N) system_config [updated_by]
 ops_users (1) ──── (0..N) message_templates [updated_by]
-ops_users (1) ──── (0..N) otp_verification_challenges [handled_by]
 
 fuel_types (1) ──── (0..N) vehicles [fuel_type_id]
 fuel_types (1) ──── (0..N) provider_fuel_types
@@ -433,7 +459,8 @@ Explicit FK list (all in ERD):
 - message_templates.updated_by → ops_users.id
 - audit_log.ops_user_id → ops_users.id
 - system_config.updated_by → ops_users.id
-- otp_verification_challenges.handled_by → ops_users.id
+- service_requests.inspection_governorate_id → governorates.id
+- service_requests.inspection_region_id → regions.id
 - otp_verification_challenges: no FK to users (phone-based, user may not exist yet)
 
 ---
@@ -454,6 +481,8 @@ Explicit FK list (all in ERD):
 
 Keys: sat sun mon tue wed thu fri. Values: enabled BOOLEAN, start/end HH:MM or null.
 
+The only operational schedule source. Enabled day requires valid start/end for one same-day interval; disabled day uses null start/end. Multiple periods per day remain outside MVP. is_open = today's Damascus enabled/start/end interval AND NOT(today_closed AND today_closed_date=Damascus_today); no separate scalar time fields. Defaults remain every day except Friday, 08:00–20:00.
+
 ---
 
 ## 6. Constraints and UNIQUE
@@ -461,6 +490,9 @@ Keys: sat sun mon tue wed thu fri. Values: enabled BOOLEAN, start/end HH:MM or n
 | Table | Constraint |
 |---|---|
 | users | UNIQUE(phone) |
+| users | CHECK: non-deleted has name/phone; deleted has both NULL and is_active=false |
+| service_requests | CHECK: inspection locality NN for inspection and NULL for towing; route fields NULL for inspection and NN for towing |
+| otp_verification_challenges | CHECK: send_attempt_count 0–2; metadata contains at most two attempts; validation attempt_count independent |
 | providers | UNIQUE(phone) |
 | providers | UNIQUE(whatsapp_number) |
 | ops_users | UNIQUE(username) |
@@ -497,8 +529,9 @@ Keys: sat sun mon tue wed thu fri. Values: enabled BOOLEAN, start/end HH:MM or n
 | provider_edit_requests.status | pending, approved, rejected |
 | provider_year_categories.year_category | classic, mid, modern |
 | provider_vehicle_categories.vehicle_category | car, truck |
-| fuel_types: values managed by Operations (bootstrap: petrol, diesel, hybrid, electric) |
-| tow_types: values managed by Operations (bootstrap: ordinary, hydraulic, closed) |
+| otp_verification_challenges.send_status | pending, api_accepted, failed, unknown |
+| fuel_types.code | values managed by Operations (bootstrap: petrol, diesel, hybrid, electric) |
+| tow_types.code | values managed by Operations (bootstrap: ordinary, hydraulic, closed) |
 
 ---
 
@@ -510,6 +543,7 @@ Keys: sat sun mon tue wed thu fri. Values: enabled BOOLEAN, start/end HH:MM or n
 - vehicles(user_id, fuel_type_id, year_category, vehicle_category, verification_status)
 - service_requests(user_id, service_type, created_at)
 - service_requests(user_type, matching_status, created_at) — KPI queries
+- service_requests(inspection_governorate_id, inspection_region_id, created_at)
 - notifications(provider_id, created_at)
 - notifications(service_request_id)
 - notifications(followup_status, created_at)
@@ -517,7 +551,8 @@ Keys: sat sun mon tue wed thu fri. Values: enabled BOOLEAN, start/end HH:MM or n
 - provider_edit_requests(provider_id, status, created_at)
 - audit_log(ops_user_id, created_at)
 - otp_verification_challenges(phone, purpose, expires_at)
-- **otp_verification_challenges(handled_at)** ← جديد — دعم استعلام O-06b
+- otp_verification_challenges(send_status, send_attempt_count, expires_at) — O-06b
+- otp_verification_challenges(retry_at) — persisted bounded retry/reprocessing
 - provider_push_subscriptions(provider_id, is_active)
 
 ---
@@ -558,6 +593,8 @@ Keys: sat sun mon tue wed thu fri. Values: enabled BOOLEAN, start/end HH:MM or n
 
 ملاحظة: الربط بـnotifications للحصول على provider_name يتم عبر JOIN على service_request_id. Backend يحدد تفاصيل JOIN عند التنفيذ.
 
+First notification = earliest created_at, with id as deterministic tie-breaker; same first notification supplies inspection governorate and provider name. no_match inspection without notifications exports blank provider name/governorate under the existing CSV contract; its searched locality remains stored in inspection_governorate_id/inspection_region_id, not substituted into this provider-based export. No change to the approved seven CSV columns.
+
 ---
 
 ## 11. What the ERD deliberately does NOT contain
@@ -570,7 +607,7 @@ Keys: sat sun mon tue wed thu fri. Values: enabled BOOLEAN, start/end HH:MM or n
 - No DB CHECK constraint on capability junctions for towing providers in MVP (app-level only).
 - Sessions table: JWT stateless — لا sessions table في MVP. الجلسات تُدار في HttpOnly Secure cookie على مستوى التطبيق. لا invalidation فوري مطلوب في MVP.
 - Token blacklist: غير مطلوب في MVP.
-- Data cleanup jobs: مؤجَّلة لما قبل الشهر الثاني عشر من الإنتاج — لا implementation في MVP.
+- Long-retention data cleanup jobs: مؤجَّلة لما قبل الشهر الثاني عشر من الإنتاج. هذا لا يؤجل إبطال/حذف OTP المستهلك أو المنتهي، ولا retry المحدود، ولا reset إغلاق المزود اليومي ضمن MVP.
 
 ---
 
@@ -580,10 +617,10 @@ Keys: sat sun mon tue wed thu fri. Values: enabled BOOLEAN, start/end HH:MM or n
 2. Create Super Admin ops_users row (via migration/seed script — no registration screen).
 3. Insert message_templates (5 keys) with updated_by = Super Admin id.
 4. **Insert system_config row: `key='contact_phone'`, value = رقم الفريق (E.164).**
-5. Implement: users, otp_verification_challenges (including handled_at, handled_by).
+5. Implement: users with conditional deletion nullability/inactive signup; otp_verification_challenges with hash-only and send outcome metadata.
 6. Implement: providers (including whatsapp_number), provider_push_subscriptions, capability junctions, provider_coverage.
 7. Implement: vehicles.
-8. Implement: service_requests, notifications.
+8. Implement: service_requests with inspection locality and request-level matching rollup; notifications reuse the same parent.
 9. Implement: provider_edit_requests, audit_log.
 10. Apply UNIQUE constraints and recommended indexes.
 11. Validate sample Syrian workflows against ERD before DDL generation.
@@ -596,14 +633,19 @@ Keys: sat sun mon tue wed thu fri. Values: enabled BOOLEAN, start/end HH:MM or n
 |---|---|
 | `user_type='registered'` ↔ `user_id NOT NULL`, guest fields NULL | App |
 | `user_type='guest'` ↔ `user_id NULL`, guest fields NOT NULL | App |
-| `service_type='inspection'` ↔ `vehicle_id NOT NULL` (للمسجَّل); origin/dest NULL | App |
-| `service_type='towing'` ↔ `origin_governorate_id NOT NULL`, `dest_governorate_id NOT NULL` | App |
+| inspection → inspection_governorate_id/inspection_region_id NN; origin/dest NULL; vehicle_id NN for registered only | App + row CHECK |
+| towing → origin/dest NN; inspection locality NULL | App + row CHECK |
+| inspection_region_id belongs to inspection_governorate_id | App |
 | `providers.service_type='towing'` ↔ capability junctions لا تُملأ | App + UIUX |
 | `today_closed=true` ↔ `today_closed_date IS NOT NULL` | App + CHECK (where supported) |
 | `today_closed=false` ↔ `today_closed_date IS NULL` | App |
 | `providers.whatsapp_number` ↔ E.164; UNIQUE; NOT NULL | App + DB |
-| `otp.handled_at IS NOT NULL` → سجل معالج، لا يظهر في O-06b | App |
+| OTP hash-only; at most two persisted send attempts; no staff recovery or verbal support | App + row CHECK |
+| work_days only determines hours; no scalar schedule columns | App |
+| deleted user name/phone NULL; non-deleted name/phone NN | DB CHECK + App |
+| tow request matched if any Section A notification, otherwise no_match; no per-notification status | Transactional App |
 | `system_config.key='contact_phone'` → قيمة إلزامية في bootstrap | Bootstrap |
+| contact_phone editable only by Super Admin in minimal settings screen | RBAC + UIUX |
 | RBAC: deny-by-default — مُطبَّق في الكود لا في جداول permissions | Code |
 
 ---
