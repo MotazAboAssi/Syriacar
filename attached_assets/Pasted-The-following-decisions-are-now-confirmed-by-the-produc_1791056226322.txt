@@ -1,0 +1,51 @@
+The following decisions are now confirmed by the product owner.
+
+3. Guest information:
+Guests must provide their name and phone number before the service request is created.
+The flow should be:
+provider selection → guest contact information → confirmation → service_request + notification.
+
+5. Provider working hours:
+work_days is the authoritative source for daily working hours.
+The daily start/end values inside work_days determine whether the provider is open.
+Do not introduce a second conflicting source of truth using work_start/work_end.
+
+6. Account activation:
+The account becomes active only after successful OTP verification.
+Do not assume is_active defaults to true before verification.
+
+8. system_config:
+Add a minimal Super Admin Settings screen for managing the system contact phone.
+Do not expand this into a general settings system.
+
+9. Inspection provider matching:
+Provider location matching is based on governorate + region.
+Do not introduce GPS-radius matching or distance-based matching.
+
+10. Towing location:
+GPS availability must not be assumed to work reliably in Syria.
+When coordinates are available, use the Google Maps link with latitude/longitude as specified.
+When GPS is unavailable, use manually selected governorate + region instead.
+Do not add server-side GPS tracking/history.
+
+11. Multiple providers:
+One service_request can have multiple notifications.
+Selecting/notifying multiple providers adds notifications to the same service_request; it does not create separate service_requests.
+
+13. Towing second results section:
+The second section may show active/open towing providers that do not cover both required governorates.
+If the user contacts/selects one of these providers, matching_status remains `no_match`, because the provider does not satisfy the full matching condition.
+
+Additional clarification:
+The project must not assume that GPS works normally in Syria.
+The manual governorate/region path is therefore a first-class fallback, not an exceptional afterthought.
+
+Now update your proposed architecture and implementation plan to reflect these confirmed decisions.
+
+Do not modify files.
+Do not write implementation code.
+Do not install packages.
+Do not create the database.
+Do not start Build.
+
+Also identify any remaining contradictions or unresolved decisions that must be settled before implementation.
