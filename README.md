@@ -1,4 +1,4 @@
-# Syriacar — technical foundation
+# Syriacar — application and database foundation
 
 Single Next.js application, TypeScript, PostgreSQL via `pg`, and Drizzle ORM.
 The imported GitHub repository and frozen documents in `attached_assets/` remain
@@ -23,7 +23,7 @@ the source-control and product baseline. No business features are implemented.
 src/app/             Next.js layouts, page, manifest, API transport
 src/shared/ui/       Shared presentation components
 src/server/config/   Server database configuration
-src/server/db/       Lazy pooled PostgreSQL + Drizzle; empty schema
+src/server/db/       Lazy pooled PostgreSQL + Drizzle schema and verification
 src/server/health/   Read-only infrastructure health probe
 src/modules/         Reserved for future authorized domain modules (no code yet)
 ```
@@ -41,11 +41,70 @@ HTTP 503: status `degraded`, application `ok`, database `unconfigured` or
 The HTML shell can load without DB credentials, but the health endpoint fails
 explicitly rather than silently reporting success.
 
-## Drizzle / PWA scope
+## Database foundation (DBMS v2.2)
 
 `drizzle.config.ts` uses the same validated `DATABASE_URL` and Next's environment
-loader for `.env.local`. The schema is deliberately empty. No tables, migration
-files, seeds, schema pushes, or startup DDL have been created/run.
+loader for `.env.local`. The 24 approved business tables are exported from
+`src/server/db/schema.ts`, with focused definitions in `src/server/db/schema/`.
+`drizzle/` contains the generated, DDL-only migration and its snapshot/journal.
+
+- `npm run db:generate` generates migration files from Drizzle (does not apply).
+- `npm run db:migrate` explicitly applies pending migrations to the configured
+  **development** database. It is not a startup or publish hook.
+- `npm run db:verify` compares PostgreSQL's live catalogs against Drizzle:
+  tables, columns, types, nullability, defaults, PKs, FKs, unique constraints,
+  checks, enums, index definitions, and FK index coverage. It then exercises
+  accepted/rejected rows in a transaction that is completely rolled back.
+  Behavioral verification requires empty application tables and refuses to
+  operate on existing business data. All test records are uncommitted and
+  must leave the application tables unchanged.
+- The Node 24 verification CLI uses the same application client/pool, with
+  the `react-server` condition for the existing `server-only` boundary.
+  It releases that pool after completion. No second application client exists.
+
+Types/defaults follow the frozen specification: UUIDs and timestamps do not
+acquire unspecified defaults, JSON remains JSON, coordinates remain unbounded
+DECIMAL/numeric, and TIMESTAMP remains PostgreSQL timestamp without time zone.
+Drizzle encodes those timestamp values as UTC, and application pool sessions
+explicitly use UTC. `work_days` has the explicit schedule default from §5.
+
+Database checks cover user anonymization/inactive deletion, OTP bounded send
+count/array length, closure-date consistency, inspection/towing locality and
+registered-inspection vehicle presence, vehicle year range, and the provider
+edit-field allowlist. Phone uniqueness permits multiple anonymized NULLs.
+No cascading deletion, plaintext OTP columns, scalar schedule fields,
+notification matching status, sessions, or extra business tables are added.
+The `drizzle.__drizzle_migrations` table is infrastructure metadata, not an
+additional application entity.
+
+### Explicit application-only rules (not implemented in this build)
+
+DBMS v2.2 assigns governorate/region membership, brand/group membership,
+E.164 normalization/validation, user-type identity consistency, capability
+restrictions for towing, schedule JSON validation, OTP hash generation and
+metadata sanitization, and active-challenge uniqueness to the application.
+Active OTP uniqueness requires transactional phone/purpose locking, not an
+invalid time-dependent partial unique index. Provider/request locality FKs
+validate existence; they deliberately do not invent composite FKs or triggers
+for the application-only membership checks.
+
+Request-level matching rollup, retry handling, anonymization transactions,
+and cleanup/reset jobs also remain outside this database-only build. A valid
+hash-only database column does not itself generate or sanitize an OTP.
+
+### Bootstrap explicitly deferred
+
+The owner approved implementing/migrating/verifying the schema first, with
+**all bootstrap/reference rows deferred**. No seed script, credentials, mock
+business data, reference records, Super Admin, message templates, or
+`contact_phone` row are inserted. Before bootstrap, supply approved
+governorate/region/brand-group/brand records, reference Arabic labels and order,
+the real team contact number (not the example), and securely configured admin
+identity/credentials. The five template texts are defined in the frozen
+documents. Future bootstrap must use a securely hashed password and the Super
+Admin FK for template/config updates; no real password belongs in source.
+
+## PWA scope
 
 The shell has Arabic RTL, responsive layout, viewport/safe-area support, and a
 web manifest with an SVG icon. This is PWA groundwork, not a complete offline

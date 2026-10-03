@@ -1,8 +1,8 @@
 import "server-only";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
-import { readDatabaseConfig } from "@/server/config/database";
-import * as schema from "./schema";
+import { readDatabaseConfig } from "../config/database.ts";
+import * as schema from "./schema.ts";
 
 function createDatabase() {
   const { connectionString } = readDatabaseConfig();
@@ -14,6 +14,8 @@ function createDatabase() {
     query_timeout: 5_000,
     statement_timeout: 5_000,
     application_name: "syriacar",
+    // The frozen schema uses TIMESTAMP values with UTC semantics.
+    options: "-c timezone=UTC",
   });
 
   // Handle idle-client failures without logging credential-bearing error details.
@@ -33,4 +35,12 @@ const runtime = globalThis as typeof globalThis & {
 export function getDatabase() {
   runtime.syriacarDatabase ??= createDatabase();
   return runtime.syriacarDatabase.db;
+}
+
+/** CLI verification uses the same lazy pool, then releases it on completion. */
+export async function closeDatabase() {
+  if (!runtime.syriacarDatabase) return;
+  const connection = runtime.syriacarDatabase;
+  delete runtime.syriacarDatabase;
+  await connection.pool.end();
 }
