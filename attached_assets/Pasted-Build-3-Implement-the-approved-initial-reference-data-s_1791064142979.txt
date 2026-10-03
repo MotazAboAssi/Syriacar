@@ -1,0 +1,344 @@
+Build #3 — Implement the approved initial reference-data seed and ensure the database remains ready for Operations management.
+
+IMPORTANT:
+This is a controlled implementation step.
+
+Use the existing DBMS v2.2 schema and the current project foundation.
+Do NOT start authentication, OTP, WhatsApp, providers, service requests, notifications, maps, Web Push, or other application workflows.
+
+The purpose of this build is:
+1. Seed the approved initial reference data.
+2. Make the seed idempotent.
+3. Preserve the existing schema.
+4. Ensure these reference entities remain manageable by the Operations role according to the frozen SRS/UI/UX.
+
+APPROVED INITIAL REFERENCE DATA
+
+These decisions are explicitly approved and override older/example values in the documents where they conflict.
+
+A. GOVERNORATES
+
+Seed exactly these 14 governorates:
+
+1. دمشق
+2. ريف دمشق
+3. حلب
+4. حمص
+5. حماة
+6. اللاذقية
+7. طرطوس
+8. إدلب
+9. درعا
+10. السويداء
+11. القنيطرة
+12. دير الزور
+13. الرقة
+14. الحسكة
+
+B. REGIONS
+
+Seed all region entries supplied by the project owner, preserving the Arabic display names.
+
+دمشق:
+- مدينة دمشق
+- المزة
+- كفرسوسة
+- الشعلان
+- الميدان
+- الصالحية
+- دمر
+- دمر البلد
+- قدسيا
+- القابون
+- برزة
+
+ريف دمشق:
+- دوما
+- التل
+- قدسيا
+- الزبداني
+- يبرود
+- النبك
+- قطنا
+- داريا
+- مركز ريف دمشق
+- الشاغور/السيدة زينب
+
+حلب:
+- مركز حلب
+- جبل سمعان
+- أعزاز
+- الباب
+- عفرين
+- عين العرب (كوباني)
+- منبج
+- الجرابلوس
+- السفيرة
+- أتارب
+- دير حافر
+
+حمص:
+- مركز حمص
+- القصير
+- الرستن
+- تدمُر
+- مخرم الفوقا
+- تلكلخ
+- نَوى/تلبيسة
+
+حماة:
+- مركز حماة
+- محردة
+- السقيلبية
+- مصياف
+- سلمية
+
+اللاذقية:
+- مركز اللاذقية
+- الحفة
+- جبلة
+- القرداحة
+
+طرطوس:
+- مركز طرطوس
+- بانياس
+- صافيتا
+- الدريكيش
+- الشيخ بدر
+
+إدلب:
+- مركز إدلب
+- أريحة
+- المعرة (معرة النعمان)
+- حارم
+- جسر الشغور
+
+درعا:
+- مركز درعا
+- الصنمين
+- إزرع
+
+السويداء:
+- مركز السويداء
+- شهبا
+- صلخد
+
+القنيطرة:
+- مركز القنيطرة
+- خان أرنبة
+
+دير الزور:
+- مركز دير الزور
+- الميادين
+- البوكمال
+
+الرقة:
+- مركز الرقة
+- الثورة (الطبقة)
+- تل أبيض
+
+الحسكة:
+- مركز الحسكة
+- القامشلي
+- المالكية
+- رأس العين
+
+IMPORTANT:
+Do not add extra regions.
+Do not remove any listed region.
+Do not silently rename, translate, merge, or normalize the Arabic display names.
+
+C. FUEL TYPES
+
+Seed exactly these 5 types, in this order:
+
+1. بنزين
+2. مازوت / ديزل
+3. غاز طبيعي / سي إن جي
+4. هايبرد / هجين
+5. كهرباء بالكامل
+
+D. TOW TYPES
+
+Seed exactly these 5 types, in this order:
+
+1. سطحة هيدروليك (نزول كامل)
+2. سطحة العادية / الثابتة
+3. سطحة ونش / رافعة
+4. سطحة مغلقة
+5. سحب دولابين / رافعة شوكية (شال)
+
+E. BRAND GROUPS AND BRANDS
+
+Use exactly the approved detailed grouping and brands supplied by the project owner.
+
+Korean:
+- هيونداي (Hyundai)
+- كيا (Kia)
+- دايو (Daewoo)
+- سانغ يونغ / ك جي مابيلتي (SsangYong / KGM)
+
+Japanese:
+- تويوتا (Toyota)
+- نيسان (Nissan)
+- مازدا (Mazda)
+- هوندا (Honda)
+- ميتسوبيشي (Mitsubishi)
+- سوزوكي (Suzuki)
+- سوبارو (Subaru)
+- لكزس (Lexus)
+- إنفينيتي (Infiniti)
+
+Chinese:
+- جيلي (Geely)
+- شيري (Chery)
+- شانجان (Changan)
+- بي واي دي (BYD)
+- هافال (Haval) / جريت وول (Great Wall)
+- إم جي (MG)
+- دونغ فينغ (Dongfeng)
+- فاو (FAW)
+- جاك (JAC)
+
+Iranian:
+- سايبا (Saipa)
+- إيران خودرو / شام (IKCO / Sham)
+
+German:
+- مرسيدس-بنز (Mercedes-Benz)
+- بي إم دبليو (BMW)
+- أودي (Audi)
+- فولكس فاجن (Volkswagen)
+- بورش (Porsche)
+- أوبل (Opel)
+
+French:
+- بيجو (Peugeot)
+- رينو (Renault)
+- ستروين (Citroën)
+
+Italian:
+- فيات (Fiat)
+- ألفا روميو (Alfa Romeo)
+- مازيراتي (Maserati)
+- فيراري (Ferrari)
+- لامبورغيني (Lamborghini)
+
+Swedish / British:
+- فولفو (Volvo)
+- لاند روفر (Land Rover)
+- جاكوار (Jaguar)
+- ميني (MINI)
+
+American:
+- شيفروليه (Chevrolet)
+- فورد (Ford)
+- جي إم سي (GMC)
+- دودج (Dodge)
+- جيب (Jeep)
+- كاديلاك (Cadillac)
+- تيسلا (Tesla)
+
+Preserve the exact Arabic display names and the approved ordering.
+
+Do not add or remove brands.
+
+OPERATIONS MANAGEMENT:
+
+These reference records are NOT immutable bootstrap constants.
+
+They are initial data that must remain manageable through the Operations role according to the frozen SRS/UI/UX.
+
+Do NOT redesign or expand the Operations UI in this build.
+
+Do NOT invent additional Operations permissions.
+
+Do NOT make the reference data hard-coded into application logic.
+
+The seed must only establish the initial database state.
+
+SEED DESIGN:
+
+1. Create an idempotent seed/bootstrap mechanism.
+2. Running it multiple times must not create duplicates.
+3. Use stable unique identifiers/keys appropriate to the existing schema.
+4. Preserve ordering using the existing ordering fields/schema.
+5. Preserve Arabic display names exactly.
+6. Respect all foreign keys.
+7. Verify region → governorate relationships.
+8. Do not create mock providers, users, vehicles, requests, notifications, or other business data.
+
+IMPORTANT:
+Do not alter the existing DB schema merely to accommodate these seeds unless the current schema genuinely cannot represent the approved data.
+If a schema limitation is discovered, STOP and report it rather than silently redesigning it.
+
+SUPER ADMIN:
+
+Do NOT create the real Super Admin account yet.
+
+Prepare only the secure mechanism if the current architecture requires it.
+
+When implemented, it must:
+- use runtime/environment secrets;
+- never hard-code passwords;
+- never print passwords;
+- never store plaintext passwords;
+- use Argon2id;
+- fail safely when required credentials are absent.
+
+Do NOT choose between:
+- superadmin
+- sysadmin
+
+Do not invent the final admin email or password.
+
+SUPPORT PHONE:
+
+Do NOT seed system_config.contact_phone yet.
+
+The support/admin phone is intentionally not approved.
+
+The WhatsApp OTP gateway number is separate:
++963998548589
+
+Do not place that gateway number into the public support/admin configuration.
+
+VERIFICATION:
+
+After implementation:
+
+1. Run the seed against development PostgreSQL.
+2. Verify exact counts:
+   - 14 governorates.
+   - all approved regions.
+   - 5 fuel types.
+   - 5 tow types.
+   - all approved brand groups.
+   - all approved brands.
+3. Run the seed again.
+4. Verify no duplicates were created.
+5. Verify all regions point to the correct governorate.
+6. Verify ordering.
+7. Verify exact Arabic display values.
+8. Verify existing DB constraints remain valid.
+9. Run the existing database tests.
+10. Run TypeScript typecheck.
+11. Run production build.
+12. Verify no unrelated application features were added.
+
+Do NOT start Build #4.
+
+FINAL RESPONSE:
+Report only:
+
+1. Files created/changed.
+2. Seeded row counts by entity/category.
+3. Idempotency result.
+4. Governorate/region relationship verification.
+5. Operations-management readiness result.
+6. Super Admin bootstrap status.
+7. Support phone status.
+8. Typecheck/build/test results.
+9. Any issue requiring approval.
+
+STOP after this build.
