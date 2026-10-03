@@ -1,0 +1,147 @@
+Build #2 — Implement the database foundation from the frozen DBMS specification.
+
+IMPORTANT:
+This is a controlled implementation step.
+Do NOT implement application features outside the scope below.
+Do NOT make assumptions or silently resolve ambiguities.
+If the required DBMS specification cannot be found/read in the repository, STOP and report that instead of guessing.
+
+SOURCE OF TRUTH:
+Use the frozen Syriacar DB specification:
+Syriacar_DBMS_Engineer_v2_2.md
+
+The DBMS v2.2 specification is authoritative for:
+- entities
+- columns
+- data types
+- nullability
+- defaults
+- primary keys
+- foreign keys
+- unique constraints
+- check constraints
+- indexes
+- relationships
+- retention-related fields
+- reference/bootstrap data
+- implementation constraints
+
+Also inspect the existing project foundation before changing anything.
+
+CURRENT BASELINE:
+GitHub main and local main are synchronized at:
+
+9624e75
+chore: establish application foundation
+
+Do not rewrite or remove the existing foundation.
+
+SCOPE OF THIS BUILD:
+
+1. Inspect the existing project structure and DB configuration.
+
+2. Read the complete DBMS v2.2 specification before implementing.
+
+3. Implement the complete Drizzle database schema required by DBMS v2.2.
+
+4. Implement all required:
+   - tables/entities
+   - columns
+   - types
+   - nullable/non-nullable rules
+   - defaults
+   - primary keys
+   - foreign keys
+   - unique constraints
+   - check constraints
+   - required indexes
+
+5. Pay special attention to the already-finalized decisions:
+   - OTP is hash-only; never store plaintext OTP.
+   - OTP handling/send outcome metadata must follow DBMS v2.2.
+   - account activation must follow the specification.
+   - deleted/anonymized users must support the required NULL behavior.
+   - work_days is the authoritative provider schedule; do NOT reintroduce competing work_start/work_end fields.
+   - inspection locality uses governorate + region.
+   - inspection region must belong to the selected governorate.
+   - service_request has one-to-many notifications.
+   - request-level matching status follows the finalized rules.
+   - no separate notification-level matching status unless explicitly specified by DBMS v2.2.
+   - system_config includes the required contact_phone configuration.
+   - provider WhatsApp number requirements must follow the specification.
+   - no GPS history/tracking tables.
+   - no payment tables.
+   - no booking/appointment tables.
+   - no chat/reviews/ratings/AI diagnosis entities.
+   - do not introduce extra business entities.
+
+6. Create the Drizzle migration(s) required to create the database schema.
+
+7. Apply the migration against the configured PostgreSQL database.
+
+8. Implement only the bootstrap/reference data explicitly required by DBMS v2.2.
+
+9. If DBMS v2.2 requires a Super Admin seed, implement it exactly according to the specification and existing security requirements.
+   Do not invent credentials or hard-code a real password.
+
+10. Verify the resulting PostgreSQL database:
+    - migrations succeed
+    - schema is actually created
+    - foreign keys exist
+    - unique/check constraints exist
+    - required indexes exist
+    - no unintended application tables were created
+    - Drizzle schema and PostgreSQL schema are consistent
+
+11. Run appropriate TypeScript/build/database verification.
+
+STRICTLY DO NOT IMPLEMENT YET:
+- authentication UI or flows
+- registration/login
+- OTP sending
+- WhatsApp/Whapi integration
+- provider registration UI
+- vehicle UI
+- service request UI
+- inspection workflow
+- towing workflow
+- notifications sending
+- Web Push/VAPID
+- Leaflet/maps
+- admin dashboards
+- Operations UI
+- Super Admin UI
+- CSV exports
+- scheduled cleanup jobs
+- payments
+- business logic beyond what is necessary for database/bootstrap verification
+
+Do not add mock business data.
+
+Do not modify the frozen SRS, DBMS, or UI/UX documents unless a real implementation inconsistency is discovered.
+If an inconsistency is discovered, STOP and report it rather than changing the specification yourself.
+
+QUALITY REQUIREMENTS:
+- Keep the existing modular-monolith structure.
+- Keep database code under the existing server/database structure.
+- Keep secrets out of source control.
+- Do not expose database credentials to client code.
+- Do not add unnecessary dependencies.
+- Do not create duplicate database clients.
+- Do not use raw SQL where Drizzle provides the required schema functionality, except where PostgreSQL-specific behavior is genuinely required.
+- Keep the implementation minimal and production-oriented.
+
+FINAL STEP:
+After implementation and verification, STOP.
+
+Report ONLY:
+1. Files created/changed.
+2. Tables/entities implemented.
+3. Migration status.
+4. PostgreSQL verification result.
+5. Constraints/indexes verification result.
+6. Bootstrap/reference data result.
+7. Build/typecheck/test results.
+8. Any deviations, unresolved issues, or decisions that require my approval.
+
+Do NOT start Build #3.
