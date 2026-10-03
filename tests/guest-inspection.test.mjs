@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { randomInt, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import { once } from "node:events";
 import test from "node:test";
@@ -13,12 +13,12 @@ import { damascusTime, openWindow } from "../src/modules/guest-inspection/availa
 import { parseGuestInspection, InspectionError } from "../src/modules/guest-inspection/validation.ts";
 import { inspectionHandlers } from "../src/modules/guest-inspection/http.ts";
 import { createGuestInspection, listProviders } from "../src/modules/guest-inspection/service.ts";
+import { withInspectionFixture as fixture } from "./fixtures/guest-inspection.mjs";
 
 nextEnv.loadEnvConfig(process.cwd());
 const noon = new Date("2026-10-04T09:00:00Z"); // Sunday, 12:00 Damascus
 const friday = new Date("2026-10-09T09:00:00Z");
 const runtime = { now: () => noon };
-const phone = () => `+1999${randomInt(1_000_000, 10_000_000)}`;
 const db = getDatabase();
 let originalCounts, originalReferences, originalSupportPhone;
 
@@ -42,67 +42,6 @@ test.after(async () => {
   }
 });
 
-// Every integration test uses its own uncommitted fixture transaction. Even a
-// test assertion failure rolls back; there are no committed cleanup windows.
-async function fixture(check) {
-  const rollback = new Error("ROLLBACK_GUEST_INSPECTION_FIXTURE");
-  try {
-    await db.transaction(async (tx) => {
-      const gov = randomUUID(), otherGov = randomUUID();
-      const region = randomUUID(), otherRegion = randomUUID(), alternateRegion = randomUUID();
-      const ops = randomUUID();
-      await tx.insert(s.governorates).values([
-        { id: gov, nameAr: "محافظة تحقق فقط", isActive: true },
-        { id: otherGov, nameAr: "محافظة تحقق أخرى", isActive: true },
-      ]);
-      await tx.insert(s.regions).values([
-        { id: region, governorateId: gov, nameAr: "منطقة تحقق فقط", isActive: true },
-        { id: alternateRegion, governorateId: gov, nameAr: "منطقة تحقق بديلة", isActive: true },
-        { id: otherRegion, governorateId: otherGov, nameAr: "منطقة تحقق أخرى", isActive: true },
-      ]);
-      await tx.insert(s.opsUsers).values({
-        id: ops, name: "verification only", username: `verify_${ops}`,
-        passwordHash: "verification_only_not_a_credential", role: "operations", createdAt: noon,
-      });
-      const ids = Object.fromEntries(["active", "capable", "oldClosure", "closedToday", "closedSchedule",
-        "pending", "disabled", "towing", "otherRegion", "otherGovernorate"].map((k) => [k, randomUUID()]));
-      const configs = {
-        active: {},
-        capable: {},
-        oldClosure: { todayClosed: true, todayClosedDate: "2026-10-03" },
-        closedToday: { todayClosed: true, todayClosedDate: "2026-10-04" },
-        closedSchedule: { workDays: { ...defaultWorkDays, sun: { enabled: false, start: null, end: null } } },
-        pending: { status: "pending" },
-        disabled: { status: "disabled" },
-        towing: { serviceType: "towing" },
-        otherRegion: { regionId: alternateRegion },
-        otherGovernorate: { governorateId: otherGov, regionId: otherRegion },
-      };
-      await tx.insert(s.providers).values(Object.entries(configs).map(([key, change]) => ({
-        id: ids[key], businessName: `verification only ${key}`, phone: phone(), whatsappNumber: phone(),
-        passwordHash: "verification_only_not_a_credential", serviceType: "inspection", status: "active",
-        governorateId: gov, regionId: region, workDays: defaultWorkDays, createdAt: noon, createdBy: ops, ...change,
-      })));
-      const [group] = await tx.select().from(s.brandGroups).limit(1);
-      const [brand] = await tx.select().from(s.brands).where(eq(s.brands.brandGroupId, group.id)).limit(1);
-      const [fuel] = await tx.select().from(s.fuelTypes).limit(1);
-      await tx.insert(s.providerBrandGroups).values({ providerId: ids.capable, brandGroupId: group.id });
-      await tx.insert(s.providerBrands).values({ providerId: ids.capable, brandId: brand.id });
-      await tx.insert(s.providerFuelTypes).values({ providerId: ids.capable, fuelTypeId: fuel.id });
-      await tx.insert(s.providerYearCategories).values({ providerId: ids.capable, yearCategory: "classic" });
-      await tx.insert(s.providerVehicleCategories).values({ providerId: ids.capable, vehicleCategory: "truck" });
-      const input = {
-        governorateId: gov, regionId: region, providerId: ids.active,
-        guestName: "ضيف تحقق", guestPhone: "+963900000001", acceptedTerms: true,
-      };
-      const api = inspectionHandlers(() => tx, runtime);
-      await check({ tx, gov, region, otherGov, otherRegion, ids, input, api, group, brand, fuel, ops });
-      throw rollback;
-    });
-  } catch (error) {
-    if (error !== rollback) throw error;
-  }
-}
 const get = (path) => new Request(`http://inspection.test${path}`);
 const post = (body) => new Request("http://inspection.test/api/guest-inspection/requests", {
   method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),

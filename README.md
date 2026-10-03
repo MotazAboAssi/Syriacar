@@ -19,6 +19,11 @@ slice is implemented; other application workflows remain deferred.
   inspection tests, and HTTP smoke tests against the running app, using the Replit
   development domain when available, otherwise `http://127.0.0.1:5000`. It requires
   the development database/reference rows and uses the `react-server` condition.
+- `npm run test:browser` runs the Build 4 Chromium interaction regressions.
+  It requires the running app, development database, and Chromium installed on
+  `PATH` (Replit's supplied Chromium is detected automatically). `playwright-core`
+  is a development-only dependency; no browser download or runtime dependency is
+  added to the application.
 
 ## Boundaries
 
@@ -204,6 +209,39 @@ The five message templates also remain deferred because their required
   seeded reference rows and original application counts are checked unchanged.
   The foundation `db:verify` command remains an empty-non-reference acceptance
   check; run it before real use of the request flow, not against business data.
+
+### Browser regression coverage — Build 4 hardening
+
+`tests/browser/guest-inspection.test.mjs` contains nine focused browser cases:
+dependent region replacement; selected-region parent preservation; provider and
+no-provider transitions; matched confirmation including consent/cancel/payload;
+stale provider rejection; forged cross-governorate region rejection; deactivated
+locality rejection; mobile no-match success without an absent support phone; and
+discarding delayed old-locality results.
+
+The browser loads the actual Next.js page. Browser-only request interception
+binds the same server-only inspection HTTP handlers to the uncommitted fixture
+transaction. These are real PostgreSQL results, not canned response data.
+All API requests are intercepted fail-closed: no request can fall back to live
+application writes. No production route, testing bypass, schema, or product
+behavior is changed. The shared fixture is in
+`tests/fixtures/guest-inspection.mjs`; fixture API work is serialized for the
+transaction-pinned pg client. Before/after checks preserve all 24 table counts,
+all six reference-table contents, and the original support configuration.
+
+Complete verification:
+
+```sh
+npm test
+npm run test:browser
+npm run db:verify
+npm run db:verify-seed
+npm run typecheck
+npm run build
+```
+
+As above, the foundation database assertions require empty non-reference tables.
+Do not remove genuine business data to satisfy that acceptance check.
 
 ## PWA scope
 
