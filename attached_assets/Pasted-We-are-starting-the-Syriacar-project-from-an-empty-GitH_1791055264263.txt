@@ -1,0 +1,56 @@
+We are starting the Syriacar project from an empty GitHub repository.
+
+I have provided three project documents:
+1. SRS
+2. Database specification
+3. UI/UX specification
+
+Your task at this stage is ONLY to perform an engineering and architecture review.
+
+DO NOT:
+- write or modify code
+- create files
+- install packages
+- create a database
+- run migrations
+- configure secrets
+- deploy anything
+- change the repository
+- start implementation
+
+Read all three documents carefully and treat them as the primary source of truth.
+
+I want you to analyze the project and provide:
+
+1. Your understanding of the Syriacar MVP and its main workflows.
+2. The architecture you recommend for implementing exactly this SRS.
+3. Recommended technology stack and why, while respecting the existing specifications.
+4. How you would structure the Next.js application.
+5. How you would implement the PostgreSQL database and Drizzle ORM based on the provided DB specification.
+6. How authentication, OTP, password hashing, JWT/session handling, RBAC, and security requirements should be implemented.
+7. How whapi.cloud should be integrated according to the SRS.
+8. How Web Push/VAPID should be implemented.
+9. How Leaflet/OpenStreetMap should be integrated, including the required fallback behavior.
+10. How scheduled jobs and retention requirements should be implemented.
+11. How User, Provider, and Admin workflows should be separated.
+12. How you would approach testing, including unit, integration, and end-to-end testing.
+13. How you would structure the project into implementation milestones.
+14. Identify any contradictions, ambiguities, missing decisions, or implementation risks you find across the three documents.
+15. Identify anything in the documents that you think should NOT be changed and must be preserved exactly during implementation.
+16. Identify any parts where you would normally make an assumption instead of asking for clarification.
+
+Important:
+- Do not invent requirements that are not present in the documents.
+- Do not add payments, booking, ratings, reviews, chat, AI diagnosis, GPS tracking history, or other features outside the defined MVP.
+- Do not simplify or remove security requirements.
+- Do not propose architectural changes merely because they are easier to implement.
+- If you disagree with something in the specifications, explicitly identify it and explain the technical concern instead of silently changing it.
+
+At the end, provide:
+A. Proposed architecture
+B. Proposed implementation milestones
+C. Risks / ambiguities
+D. Questions that must be answered before implementation
+E. A recommended first implementation step
+
+Again: this is a REVIEW ONLY. Do not make any changes to the project.
