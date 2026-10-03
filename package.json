@@ -15,7 +15,9 @@
     "test": "node --test tests/*.test.mjs",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:verify": "node --conditions=react-server src/server/db/verify.ts"
+    "db:verify": "node --conditions=react-server src/server/db/verify.ts",
+    "db:seed": "node --conditions=react-server src/server/db/seed/seed-cli.ts",
+    "db:verify-seed": "node --conditions=react-server src/server/db/seed/verify-cli.ts"
   },
   "dependencies": {
     "drizzle-orm": "^0.45.3",

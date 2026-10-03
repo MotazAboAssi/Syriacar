@@ -23,7 +23,7 @@ the source-control and product baseline. No business features are implemented.
 src/app/             Next.js layouts, page, manifest, API transport
 src/shared/ui/       Shared presentation components
 src/server/config/   Server database configuration
-src/server/db/       Lazy pooled PostgreSQL + Drizzle schema and verification
+src/server/db/       Lazy pooled PostgreSQL + Drizzle schema, explicit seed, verification
 src/server/health/   Read-only infrastructure health probe
 src/modules/         Reserved for future authorized domain modules (no code yet)
 ```
@@ -55,8 +55,9 @@ loader for `.env.local`. The 24 approved business tables are exported from
   tables, columns, types, nullability, defaults, PKs, FKs, unique constraints,
   checks, enums, index definitions, and FK index coverage. It then exercises
   accepted/rejected rows in a transaction that is completely rolled back.
-  Behavioral verification requires empty application tables and refuses to
-  operate on existing business data. All test records are uncommitted and
+  Behavioral verification permits existing reference rows, requires empty
+  non-reference tables, and refuses to operate on existing business data.
+  All test records are uncommitted and
   must leave the application tables unchanged.
 - The Node 24 verification CLI uses the same application client/pool, with
   the `react-server` condition for the existing `server-only` boundary.
@@ -92,17 +93,68 @@ Request-level matching rollup, retry handling, anonymization transactions,
 and cleanup/reset jobs also remain outside this database-only build. A valid
 hash-only database column does not itself generate or sanitize an OTP.
 
-### Bootstrap explicitly deferred
+### Approved initial reference seed
 
-The owner approved implementing/migrating/verifying the schema first, with
-**all bootstrap/reference rows deferred**. No seed script, credentials, mock
-business data, reference records, Super Admin, message templates, or
-`contact_phone` row are inserted. Before bootstrap, supply approved
-governorate/region/brand-group/brand records, reference Arabic labels and order,
-the real team contact number (not the example), and securely configured admin
-identity/credentials. The five template texts are defined in the frozen
-documents. Future bootstrap must use a securely hashed password and the Super
-Admin FK for template/config updates; no real password belongs in source.
+Build 3's owner-approved list in
+`attached_assets/Pasted-Build-3-Implement-the-approved-initial-reference-data-s_1791064142979.txt`
+supersedes older/example reference values. The initial manifest lives only under
+`src/server/db/seed/`; it is not exported by the schema or imported by application
+features. Those features must read the Operations-managed database tables.
+
+- `npm run db:seed` manually seeds the configured **development** database:
+  14 governorates, 76 regions, 9 brand groups, 49 brands, 5 fuel types, and
+  5 tow types. It checks the existing schema first, then inserts all six
+  categories in one transaction. It is disabled when `NODE_ENV=production`.
+  It is never run automatically during startup, migration, build, or publishing.
+- UUIDv5 identities use frozen seed-only keys and scoped initial positions,
+  never mutable display names. Do not rewrite these keys, reorder the manifest,
+  or regenerate the namespace after applying it. Repeat runs insert no
+  duplicates. Only stable-PK conflicts are skipped; a different unique-key
+  conflict fails and rolls back the entire seed.
+- Existing IDs are **never updated** by the seed: renamed, deactivated,
+  reordered, reparented, and code-edited rows are preserved. Additional managed
+  rows are also preserved. A manual rerun can reinsert missing initial IDs;
+  it is an initial-data tool, not a synchronization/repair job.
+- All initial records are active. Labels are stored verbatim, including
+  diacritics, parentheses, slashes, and the two separate `قدسيا` region rows.
+- Approved group labels, in order: كوري، ياباني، صيني، إيراني، ألماني، فرنسي،
+  إيطالي، سويدي / بريطاني، أمريكي.
+- Ordering is 1-based for groups, fuel types, and tow types; brand ordering is
+  1-based **within each group**. The owner explicitly approved keeping the schema
+  unchanged: governorates and regions have no persisted custom display order.
+  Their seed input order is not a database/query ordering guarantee. O-04
+  governorate/region reordering therefore requires a separately approved future
+  DBMS change; no sort-by-UUID workaround or invented column is used.
+- Fuel codes: `petrol`, `diesel`, `cng`, `hybrid`, `electric`. Tow codes:
+  `hydraulic`, `ordinary`, `winch`, `closed`, `two_wheel`. Existing applicable
+  DBMS codes are retained; new machine keys are not additional display values.
+- `npm run db:verify-seed` is an **initial-state acceptance check**, not a
+  restriction on future Operations records. It verifies exact IDs/counts/labels,
+  supported ordering and parent relationships, empty non-reference tables, and
+  the unchanged live schema. Rolled-back transactions prove that seed reruns
+  preserve managed edits/additions and that a uniqueness conflict rolls back
+  earlier inserts. All verification changes are rolled back.
+- `npm test` independently compares the manifest with the owner's supplied
+  lists, in addition to the existing schema and application smoke tests.
+
+Reference editing stays within the existing SRS/UI/UX permissions: Operations
+manages groups/brands and the four reference lists. This build adds no Operations
+UI, authentication, permission enforcement, runtime hard-coded options, immutable
+triggers, or extra entities.
+
+### Other bootstrap remains deferred
+
+No Super Admin, message templates, `contact_phone`, credentials, or business rows
+are seeded. Reference seeding does not require an admin/bootstrap mechanism, so
+none is introduced. A future, separately approved admin bootstrap must receive
+explicit identity and credentials from runtime/environment secrets, fail safely
+when they are absent, use **Argon2id**, and never print or store plaintext
+passwords. Neither `superadmin` nor `sysadmin` is chosen.
+
+The public support/team phone is still unapproved. The separately supplied OTP
+gateway number must **never** be substituted into `system_config.contact_phone`.
+The five message templates also remain deferred because their required
+`updated_by` FK needs the actual Super Admin account.
 
 ## PWA scope
 

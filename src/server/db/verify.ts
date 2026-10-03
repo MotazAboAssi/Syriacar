@@ -7,14 +7,15 @@ import { applicationRowCounts, tableConfigs, verifyCatalog } from "./catalog.ts"
 import { closeDatabase, getDatabase } from "./client.ts";
 import * as s from "./schema.ts";
 import { defaultWorkDays } from "./schema/types.ts";
+import { referenceTableNames } from "./seed/reference-data.ts";
 
 nextEnv.loadEnvConfig(process.cwd());
 
 async function verifyBehavior() {
   const db = getDatabase();
   const before = await applicationRowCounts();
-  assert.ok(before.every((t) => t.row_count === 0),
-    "Build 2 behavioral verification requires an empty application database; it will not touch existing business data");
+  assert.ok(before.filter((t) => !referenceTableNames.includes(t.table_name)).every((t) => t.row_count === 0),
+    "Constraint behavioral verification requires empty non-reference tables; it will not touch existing business data");
   const rollback = new Error("ROLLBACK_VERIFICATION");
   let assertions = 0;
 
@@ -226,7 +227,7 @@ async function verifyBehavior() {
 try {
   const catalog = await verifyCatalog();
   const behavior = await verifyBehavior();
-  console.log(JSON.stringify({ status: "passed", catalog, behavior, bootstrap: "deferred_by_user" }, null, 2));
+  console.log(JSON.stringify({ status: "passed", catalog, behavior }, null, 2));
 } catch (error) {
   console.error("Database verification failed:", error instanceof assert.AssertionError
     ? error.message : "Database operation failed; sensitive error details withheld.");

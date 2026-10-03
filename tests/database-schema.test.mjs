@@ -159,6 +159,6 @@ test("forbidden fields/entities and invented bootstrap data are absent from the 
     else assert.ok(!names.includes(forbidden), forbidden);
   }
   const migration = readFileSync(new URL("../drizzle/0000_database_foundation.sql", import.meta.url), "utf8");
-  assert.doesNotMatch(migration, /\bINSERT\s+INTO\b/i, "Bootstrap is deferred; migration is DDL only");
+  assert.doesNotMatch(migration, /\bINSERT\s+INTO\b/i, "Foundation migration stays DDL only; reference seed is an explicit command");
   assert.doesNotMatch(migration, /\bON\s+DELETE\s+(CASCADE|SET NULL)\b/i);
 });
