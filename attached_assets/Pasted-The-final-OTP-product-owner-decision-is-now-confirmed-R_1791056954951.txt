@@ -1,0 +1,80 @@
+The final OTP product-owner decision is now confirmed:
+
+- Remove the Operations verbal-OTP support requirement.
+- Operations must never see or retrieve the OTP code.
+- OTP remains stored only as a hash.
+- OTP is sent automatically through WhatsApp.
+- If an OTP send attempt fails, the system records the failure and allows the defined retry/reprocessing flow.
+- Two failed attempts do NOT expose the OTP to Operations.
+- Do not introduce plaintext OTP storage or any mechanism for staff to recover the OTP.
+- Delivery/API failure must be distinguishable from successful API acceptance according to the available Whapi response/status information.
+
+Now update the three project documents — SRS, DBMS, and UI/UX — to reconcile ALL previously identified issues and the confirmed product-owner decisions.
+
+Important:
+- This is documentation reconciliation only.
+- Do NOT write application code.
+- Do NOT create migrations.
+- Do NOT install packages.
+- Do NOT change the architecture beyond what is already confirmed.
+- Do NOT add new features.
+- Preserve the existing document structure and terminology as much as possible.
+- Remove contradictions rather than documenting them as unresolved.
+
+Required final changes include:
+
+1. OTP:
+   - Remove verbal OTP support from Operations.
+   - Operations never sees the OTP.
+   - Keep hash-only OTP storage.
+   - Define failed-send/retry behavior using persisted delivery/send outcome information.
+   - Update all affected SRS, DBMS, and UI/UX sections consistently.
+
+2. Inspection:
+   - Governorate + region are authoritative for matching.
+   - No reverse geocoding.
+   - GPS does not replace locality selection.
+   - Persist inspection_governorate_id and inspection_region_id on service_requests.
+   - Required for inspection requests, null for towing.
+   - Validate region belongs to selected governorate.
+   - Guest no-match flow:
+     inspection → governorate/region → guest name/phone → confirmation → no_match request.
+   - No provider-selection step when there is no match.
+
+3. Towing:
+   - One service_request can have multiple notifications.
+   - Section A = active/open providers covering both selected governorates.
+   - Section B = active/open providers not covering both.
+   - If at least one notification is Section A, request matching_status = matched.
+   - If all notifications are Section B, matching_status = no_match.
+   - No per-notification matching status.
+   - GPS available → Google Maps URL.
+   - GPS unavailable → governorate + region in WhatsApp message.
+   - Update towing_location template accordingly.
+
+4. Provider availability:
+   - work_days is the sole authoritative source for daily working hours.
+   - Remove work_start/work_end as operational schedule fields.
+   - is_open is calculated from the selected day's work_days entry and closure override.
+
+5. Account deletion:
+   - users.name and users.phone must support NULL for anonymized/deleted users.
+   - Preserve appropriate integrity constraints for non-deleted users.
+
+6. Super Admin:
+   - Add the minimal settings screen for system contact_phone.
+   - Do not create a general settings system.
+
+7. UI/UX baseline:
+   - Update the DB baseline reference from v2.1 to DBMS v2.2.
+   - Remove wording implying search expansion/provider-selection after no match.
+   - Align affected flows and acceptance criteria with the decisions above.
+
+After editing, provide a concise reconciliation report containing:
+
+A. Files/documents changed
+B. Key changes made in each document
+C. Any remaining contradiction between the three documents
+D. Whether SRS + DBMS + UI/UX are now ready to be frozen as the implementation baseline
+
+Do not start implementation.
