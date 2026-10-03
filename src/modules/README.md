@@ -1,6 +1,10 @@
 # Domain module boundary
 
-This directory is intentionally code-free during the technical foundation phase.
-Future authorized domain modules belong here, with their own application/domain
-code and persistence adapters. They must not import Next.js route handlers or UI.
-No business entities, features, schema, seed data, or migrations exist yet.
+Authorized vertical slices belong here, with focused domain/application services,
+HTTP adapters, contracts, and colocated UI. Domain/server services must not import
+Next.js route handlers or UI; route handlers only bind the module's HTTP surface.
+
+`guest-inspection/` implements first explicit guest inspection confirmation:
+locality, active/open provider matching, guest validation, and transactional
+request/notification creation. It adds no authentication, delivery, or other
+application workflows.

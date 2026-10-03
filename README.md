@@ -2,7 +2,8 @@
 
 Single Next.js application, TypeScript, PostgreSQL via `pg`, and Drizzle ORM.
 The imported GitHub repository and frozen documents in `attached_assets/` remain
-the source-control and product baseline. No business features are implemented.
+the source-control and product baseline. The first guest inspection confirmation
+slice is implemented; other application workflows remain deferred.
 
 ## Local development / Replit
 
@@ -14,8 +15,10 @@ the source-control and product baseline. No business features are implemented.
 - `npm run dev` binds `0.0.0.0:5000`.
 - `npm run typecheck`; `npm run build`.
 - `npm run start` serves the production build on port 5000.
-- `npm test` runs HTTP smoke tests against the running app, using the Replit
-  development domain when available, otherwise `http://127.0.0.1:5000`.
+- `npm test` runs static contracts, rollback-isolated real-PostgreSQL guest
+  inspection tests, and HTTP smoke tests against the running app, using the Replit
+  development domain when available, otherwise `http://127.0.0.1:5000`. It requires
+  the development database/reference rows and uses the `react-server` condition.
 
 ## Boundaries
 
@@ -25,7 +28,7 @@ src/shared/ui/       Shared presentation components
 src/server/config/   Server database configuration
 src/server/db/       Lazy pooled PostgreSQL + Drizzle schema, explicit seed, verification
 src/server/health/   Read-only infrastructure health probe
-src/modules/         Reserved for future authorized domain modules (no code yet)
+src/modules/         Authorized vertical slices (guest-inspection only)
 ```
 
 Database clients are server-only. A bounded pool is reused across hot reloads.
@@ -156,9 +159,55 @@ gateway number must **never** be substituted into `system_config.contact_phone`.
 The five message templates also remain deferred because their required
 `updated_by` FK needs the actual Super Admin account.
 
+## Guest inspection vertical slice
+
+- UI route: `/inspection/guest`; linked from the existing RTL home shell.
+- `GET /api/guest-inspection/localities`: active governorates and optionally
+  dependent active regions (`governorateId` query parameter).
+- `GET /api/guest-inspection/providers`: required `governorateId` and `regionId`.
+  Checks their active parent relationship and returns only active/open inspection
+  providers in that exact locality. Capabilities are informational for guests.
+  Open status uses only `work_days`, inclusive same-day intervals in
+  `Asia/Damascus`, and today's closure override (SRS §5.9.3).
+- `POST /api/guest-inspection/requests`: JSON `governorateId`, `regionId`,
+  `providerId` (explicit `null` for no provider), `guestName`, `guestPhone`
+  (E.164), and `acceptedTerms: true`. Only explicit confirmation calls this.
+  The server revalidates locality and current provider availability inside the
+  transaction, holds share locks on existing locality/provider rows, generates
+  explicit UUIDs/timestamps, and atomically inserts the request and notification.
+- A selected eligible provider creates one `service_requests` row with
+  `matching_status=matched` and one `notifications` row linked to it. No available
+  provider creates one `no_match` request and zero notifications. Client-forced
+  no-match, changed availability, and invalid selections are rejected; 409 means
+  refresh choices and reconfirm. Match history is not subsequently reclassified.
+- This is first confirmation only, not an additional-provider/history workflow.
+  The unchanged non-unique notification parent FK still supports one-to-many;
+  a real-PG test verifies two notices can share one parent.
+- No authentication/OTP, vehicle requirements for guests, GPS, map/distance
+  criteria, real provider seeds, WhatsApp deep links/delivery, Web Push, or
+  Operations/provider screens are added. `delivery: "not_implemented"` is explicit
+  in successful API responses; a notification row does not mean a message sent.
+- The owner approved the no-match message without the contact suffix while
+  `system_config.contact_phone` is absent. When configured, the phone is read
+  from that row, never a source constant or the OTP gateway number.
+- Successful results return only the request/notification IDs, status, public
+  provider identity/contact, support phone if configured, and delivery limitation.
+  API responses are uncached; errors withhold raw DB details. JSON bodies have an
+  8 KiB transport bound. No guest identity, hashes, or credentials are logged.
+- Client reads are cancelable, changed locality invalidates previous choices,
+  confirmation is disabled while writing, and a synchronous guard prevents
+  duplicate clicks. No automatic POST retries: unknown network outcomes are
+  shown as unknown, not fake success. Render, refresh, and cancellation do not
+  create records.
+- Test fixtures—including reference/actor/provider rows and requests—exist only
+  in outer transactions that always roll back, even on assertion failure. The
+  seeded reference rows and original application counts are checked unchanged.
+  The foundation `db:verify` command remains an empty-non-reference acceptance
+  check; run it before real use of the request flow, not against business data.
+
 ## PWA scope
 
 The shell has Arabic RTL, responsive layout, viewport/safe-area support, and a
 web manifest with an SVG icon. This is PWA groundwork, not a complete offline
 or installability implementation. No service worker, push, caching strategy,
-maps, authentication, integrations, or business screens are included.
+maps, authentication, integrations, or other business screens are included.

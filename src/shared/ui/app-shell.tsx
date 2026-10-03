@@ -7,11 +7,15 @@ export default function AppShell() {
 
       <main className="shell-main">
         <section className="intro" aria-labelledby="page-title">
-          <p className="eyebrow">الأساس التقني</p>
-          <h1 id="page-title">الأساس التقني لسيرياكار جاهز</h1>
+          <p className="eyebrow">خدمات سيرياكار</p>
+          <h1 id="page-title">ابحث عن فحص لمركبتك</h1>
           <p className="intro-copy">
-            تم إعداد البنية التقنية للمشروع. الخدمات والميزات لم تُفعّل بعد.
+            اختر منطقتك وأرسل طلب فحص إلى مزود متاح دون الحاجة إلى إنشاء حساب.
           </p>
+          <a className="health-link" href="/inspection/guest">
+            طلب فحص كضيف
+            <span aria-hidden="true">←</span>
+          </a>
           <a className="health-link" href="/api/health">
             فحص سلامة التطبيق
             <span aria-hidden="true">←</span>
