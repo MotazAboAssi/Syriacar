@@ -1,0 +1,148 @@
+Build 4 — First Vertical Slice: Guest Inspection Request
+
+We are now starting Build 4.
+
+This build MUST be the first true end-to-end Vertical Slice of Syriacar.
+
+Frozen baseline:
+- SRS v1.4
+- DBMS v2.2
+- UI/UX v1.3
+- Builds 1–3 are completed and verified.
+- Do not alter the frozen documents.
+- Do not introduce new product decisions.
+- Do not redesign the database unless a genuine implementation blocker is discovered.
+- Keep the implementation narrow and production-oriented.
+- Stay within the existing architecture and dependencies.
+- Do not start Build 5 or any unrelated workflow.
+
+GOAL
+
+Implement one complete Guest Inspection Request flow from UI → backend/API → database → response → tests.
+
+The slice must cover these two outcomes:
+
+A) Matching provider exists:
+Guest selects governorate + region, sees matching providers, selects one, enters name + phone, confirms, and the system creates one service_request plus the appropriate provider notification with matching_status = matched.
+
+B) No matching provider:
+Guest selects governorate + region, no provider is available, guest enters name + phone, confirms, and the system creates one service_request with matching_status = no_match and no provider notification.
+
+IMPORTANT DOMAIN RULES
+
+1. Inspection locality:
+- governorate + region are mandatory for inspection requests.
+- region must belong to the selected governorate.
+- Do not use GPS or reverse geocoding.
+- Do not introduce another locality mechanism.
+
+2. Provider matching:
+- Matching is based on the frozen governorate + region rules.
+- Respect the existing DBMS/SRS rules.
+- Do not invent additional matching criteria.
+
+3. Request model:
+- One service_request represents the guest request.
+- Multiple provider notifications may belong to the same service_request.
+- Do not create one service_request per provider.
+
+4. Status:
+- If at least one Section A provider is notified, matching_status = matched.
+- If no matching Section A provider exists, matching_status = no_match.
+- Do not add a per-notification match status.
+
+5. Guest data:
+- Collect guest name and phone before final request creation.
+- Validate according to the existing SRS/DBMS rules.
+- Do not add authentication or OTP to this build.
+
+6. Notifications:
+- Implement the database/domain creation of the provider notification required by the slice.
+- Do NOT integrate real WhatsApp delivery in Build 4.
+- Do NOT expose OTP or introduce OTP logic.
+- Do not create fake delivery success records pretending that WhatsApp was sent.
+
+7. Provider data:
+- Do not add real provider/business seed data to the database.
+- If deterministic provider data is needed for automated tests, use isolated test fixtures/setup and clean them up.
+- Tests must not pollute the development reference data.
+
+UI SCOPE
+
+Implement only the minimum UI required for this vertical slice:
+- governorate selection
+- region selection
+- provider selection when matching providers exist
+- clear no-provider state when none exist
+- guest name
+- guest phone
+- confirmation
+- success/result state
+- validation and error states
+
+Use the existing RTL Arabic shell and follow UI/UX v1.3.
+Do not build the complete guest application.
+Do not build Operations screens.
+Do not build provider dashboards.
+Do not build authentication screens.
+
+BACKEND/API
+
+Implement the smallest clean server-side/API surface required for the slice.
+
+Requirements:
+- server-side validation
+- transactionally safe request creation
+- validate governorate/region relationship server-side
+- prevent invalid provider selection
+- create the service_request and notification consistently
+- return a safe result to the UI
+- no trust in client-side matching decisions
+
+TESTING
+
+Add focused automated tests covering at minimum:
+
+1. valid governorate + region relationship
+2. invalid region/governorate combination rejected
+3. matching provider path
+4. no-match path
+5. guest name/phone validation
+6. service_request creation
+7. correct matching_status
+8. notification creation for matched path
+9. no notification for no-match path
+10. one request with the expected notification relationship
+11. transaction rollback on creation failure
+12. no pollution of reference seed data
+
+Run:
+- existing database assertions
+- all existing tests
+- new Build 4 tests
+- strict TypeScript/typecheck
+- production build
+- application smoke test
+
+VERIFICATION
+
+Before finishing, report:
+
+1. Files created/changed
+2. Exact routes/API/server actions introduced
+3. Exact database tables touched
+4. Which SRS/UI/DBMS rules were implemented
+5. Matching-path behavior
+6. No-match behavior
+7. Test count and results
+8. Typecheck result
+9. Production build result
+10. Smoke-test result
+11. Confirmation that no real provider/business seed data was added
+12. Confirmation that no OTP/WhatsApp delivery was implemented
+13. Confirmation that no unrelated features were started
+14. Git status
+
+STOP after Build 4.
+
+Do not start Build 5.
