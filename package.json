@@ -17,6 +17,7 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:verify": "node --conditions=react-server src/server/db/verify.ts",
+    "db:verify-isolated": "node --conditions=react-server tests/fixtures/isolated-foundation-verification.mjs",
     "db:seed": "node --conditions=react-server src/server/db/seed/seed-cli.ts",
     "db:verify-seed": "node --conditions=react-server src/server/db/seed/verify-cli.ts"
   },

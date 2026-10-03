@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { randomInt, randomUUID } from "node:crypto";
+import { pathToFileURL } from "node:url";
 import nextEnv from "@next/env";
 import { eq, getTableColumns, sql } from "drizzle-orm";
 import { getTableConfig, type PgTable } from "drizzle-orm/pg-core";
@@ -11,7 +12,7 @@ import { referenceTableNames } from "./seed/reference-data.ts";
 
 nextEnv.loadEnvConfig(process.cwd());
 
-async function verifyBehavior() {
+export async function verifyBehavior() {
   const db = getDatabase();
   const before = await applicationRowCounts();
   assert.ok(before.filter((t) => !referenceTableNames.includes(t.table_name)).every((t) => t.row_count === 0),
@@ -224,14 +225,18 @@ async function verifyBehavior() {
   return { behavioralAssertions: assertions, allFixturesRolledBack: true };
 }
 
-try {
-  const catalog = await verifyCatalog();
-  const behavior = await verifyBehavior();
-  console.log(JSON.stringify({ status: "passed", catalog, behavior }, null, 2));
-} catch (error) {
-  console.error("Database verification failed:", error instanceof assert.AssertionError
-    ? error.message : "Database operation failed; sensitive error details withheld.");
-  process.exitCode = 1;
-} finally {
-  await closeDatabase();
+// Importing the unchanged assertions for isolated verification must not execute
+// the CLI or close its caller's pool. Direct npm run db:verify retains its guard.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  try {
+    const catalog = await verifyCatalog();
+    const behavior = await verifyBehavior();
+    console.log(JSON.stringify({ status: "passed", catalog, behavior }, null, 2));
+  } catch (error) {
+    console.error("Database verification failed:", error instanceof assert.AssertionError
+      ? error.message : "Database operation failed; sensitive error details withheld.");
+    process.exitCode = 1;
+  } finally {
+    await closeDatabase();
+  }
 }

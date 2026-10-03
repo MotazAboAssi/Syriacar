@@ -1,0 +1,241 @@
+Build 5 — Second Vertical Slice: Guest Towing
+
+Build 4 and its browser hardening are complete, verified, committed, pushed, and Git is clean.
+
+Start Build 5 now.
+
+This build MUST be a narrow end-to-end Vertical Slice for the Guest Towing flow.
+
+Frozen baseline:
+- SRS v1.4
+- DBMS v2.2
+- UI/UX v1.3
+- Builds 1–4 are completed and verified.
+- Do not alter the frozen documents.
+- Do not introduce new product decisions.
+- Do not redesign the database unless a genuine implementation blocker exists.
+- Do not start Build 6.
+- Keep this build strictly limited to Guest Towing.
+
+GOAL
+
+Implement:
+
+Guest → origin governorate → destination governorate → towing provider results → provider selection → guest details → confirmation → service_request + notification → result.
+
+UI must be Arabic RTL and follow the existing UI/UX baseline.
+
+FUNCTIONAL SCOPE
+
+1. Tow governorate selection
+- Show:
+  - محافظة الانطلاق
+  - محافظة الوصول
+- Guest starts with both empty.
+- Both are required.
+- Use the existing governorate reference data.
+- Validate the selected governorates server-side.
+- Do not add region selection to the towing flow.
+- Do not use GPS or maps for this flow.
+
+2. Provider results
+
+Implement the two UI sections defined by the frozen SRS/UIUX:
+
+Section A:
+"مناسب لمشكلتك"
+
+Providers that cover BOTH selected origin and destination governorates.
+
+Section B:
+"باقي المزودين"
+
+Towing providers that do not cover both selected governorates.
+
+Only active/open towing providers are eligible.
+
+Section A ordering MUST follow the frozen rule:
+1. provider whose base governorate = origin governorate
+2. provider whose base governorate = destination governorate
+3. remaining matching providers in random order
+
+Do not expose this ordering as a label to the user.
+
+Show the fixed coverage warning from UIUX:
+"التغطية الدقيقة داخل المحافظة تُحدَّد بالاتصال مع المزود."
+
+If Section A is empty:
+- keep Section B visible
+- show the no-match-section message
+- if system_config.contact_phone is absent, omit the phone number
+- never substitute the OTP gateway number.
+
+3. Provider card
+
+Follow U-15:
+- commercial name
+- covered governorates
+- tow type
+- phone
+- "أبلغ المزود"
+
+Do not add inspection capabilities to towing providers.
+
+Do not use provider capability tables that are explicitly not applicable to towing providers.
+
+4. Guest confirmation
+
+Guest enters:
+- name
+- phone
+
+Validate using the existing guest/E.164 rules.
+
+Show the required consent/confirmation step.
+
+Guest disclosure must state that their name/phone will be sent/stored as required by the frozen UI/SRS.
+
+5. Request creation
+
+On confirmation:
+- create exactly one service_request
+- service_type = towing
+- user_type = guest
+- persist guest_name and guest_phone
+- persist origin_governorate_id
+- persist dest_governorate_id
+- create the appropriate notification for the selected provider
+- perform request + notification creation transactionally.
+
+If the selected provider becomes invalid/stale before confirmation:
+- reject the request
+- do not create partial records.
+
+Recheck provider eligibility at confirmation.
+
+6. Matching status
+
+For a selected provider:
+- create the request as matched only when the selected provider is eligible under the applicable towing matching rules.
+
+If the flow supports the Section-B provider contact path, implement the frozen rule:
+- contacting a Section-B towing provider results in matching_status = no_match.
+
+Do not invent any additional status values.
+
+7. WhatsApp
+
+Do NOT integrate WhatsApp delivery.
+
+The notification is a database record only.
+
+The user-facing "أبلغ المزود" action may prepare/open the existing wa.me flow only if this is required by the already-established architecture, using:
+providers.whatsapp_number
+
+Never use providers.phone for the WhatsApp destination.
+
+Do not claim that the platform sent a WhatsApp message.
+
+8. Send-location step
+
+Implement only the minimum UI/domain state required by the frozen U-16/SRS flow.
+
+Do not implement GPS/maps as part of this build unless the existing architecture requires only the already-defined post-notification UI.
+
+Do not add a new location model or schema.
+
+9. No real provider seeds
+
+Do not add permanent provider/business seed data.
+
+Use isolated transactional test fixtures only.
+
+Tests must leave zero business fixtures behind.
+
+10. No authentication
+
+Do NOT implement:
+- registration
+- login
+- OTP
+- sessions
+- user accounts
+
+This is Guest Towing only.
+
+TESTING
+
+Add focused automated tests covering at minimum:
+
+1. origin + destination validation
+2. same/invalid governorate selections according to existing rules
+3. Section A matching by both governorates
+4. Section B providers
+5. exact Section A ordering rule
+6. empty Section A while Section B remains visible
+7. no-support-number behavior when contact_phone is absent
+8. provider eligibility rechecked at confirmation
+9. guest name/phone validation
+10. service_request creation
+11. correct origin/destination persistence
+12. notification creation
+13. matched path
+14. Section-B no_match path if applicable
+15. transaction rollback
+16. no permanent test fixtures
+17. existing Build 4 behavior remains intact
+
+BROWSER COVERAGE
+
+Add browser-level coverage for the actual guest UI:
+
+- select origin
+- select destination
+- verify provider sections
+- verify Section A ordering
+- select provider
+- enter guest details
+- confirm
+- verify success state
+- verify invalid/stale provider cannot be submitted
+- verify no-support-number state when contact_phone is absent
+
+Use real application handlers and isolated test fixtures, not canned API responses.
+
+VERIFICATION
+
+Run:
+- all existing tests
+- Build 4 tests
+- Build 4 browser tests
+- Build 5 tests
+- database assertions
+- seed verification
+- typecheck
+- production build
+- application smoke test
+- browser tests
+
+Before stopping, report:
+
+1. Files created/changed
+2. Routes/server actions introduced
+3. Database tables touched
+4. Exact FR-TOW requirements implemented
+5. Exact UIUX screens/flows implemented
+6. Section A matching and ordering behavior
+7. Section B behavior
+8. matched/no_match behavior
+9. test counts/results
+10. browser test results
+11. typecheck
+12. production build
+13. smoke test
+14. confirmation that no permanent provider/business seed data was added
+15. confirmation that no OTP/WhatsApp delivery was added
+16. confirmation that no Build 6 work was started
+17. Git status
+
+STOP after Build 5.
+
+Do not start Build 6.

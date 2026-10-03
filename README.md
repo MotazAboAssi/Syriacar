@@ -2,8 +2,8 @@
 
 Single Next.js application, TypeScript, PostgreSQL via `pg`, and Drizzle ORM.
 The imported GitHub repository and frozen documents in `attached_assets/` remain
-the source-control and product baseline. The first guest inspection confirmation
-slice is implemented; other application workflows remain deferred.
+the source-control and product baseline. Guest inspection and guest towing
+vertical slices are implemented; other application workflows remain deferred.
 
 ## Local development / Replit
 
@@ -16,10 +16,10 @@ slice is implemented; other application workflows remain deferred.
 - `npm run typecheck`; `npm run build`.
 - `npm run start` serves the production build on port 5000.
 - `npm test` runs static contracts, rollback-isolated real-PostgreSQL guest
-  inspection tests, and HTTP smoke tests against the running app, using the Replit
+  inspection/towing tests, and HTTP smoke tests against the running app, using the Replit
   development domain when available, otherwise `http://127.0.0.1:5000`. It requires
   the development database/reference rows and uses the `react-server` condition.
-- `npm run test:browser` runs the Build 4 Chromium interaction regressions.
+- `npm run test:browser` runs the Build 4 inspection and Build 5 towing Chromium regressions.
   It requires the running app, development database, and Chromium installed on
   `PATH` (Replit's supplied Chromium is detected automatically). `playwright-core`
   is a development-only dependency; no browser download or runtime dependency is
@@ -243,9 +243,94 @@ npm run build
 As above, the foundation database assertions require empty non-reference tables.
 Do not remove genuine business data to satisfy that acceptance check.
 
+If real requests already exist, both original initial-state commands intentionally
+refuse to run. Use `npm run db:verify-isolated` instead: it checks the actual public
+catalog and approved reference values read-only, runs the same 243 behavioral
+assertions and seed verification on a rollback-only copy of the frozen migration,
+then confirms real table counts/reference/configuration/request content and the
+complete schema inventory are unchanged. Temporary schema/types/tables are all
+rolled back. The original verifier's empty-data safety guard is retained; only its
+assertion function is exported and its CLI entrypoint guarded for this test runner.
+
+## Guest towing vertical slice — Build 5
+
+### Surface and requirements
+
+- `/towing/guest` implements guest U-13 route selection, U-14 A/B results,
+  U-15 provider card/details/consent (mobile bottom sheet, desktop side panel),
+  and minimum U-16 notification result/manual location sharing. Home links to it.
+- FR-TOW-001/003 and guest read-side of 004: origin and destination start empty and use active reference
+  governorates. Both are required and revalidated server-side. No route region,
+  GPS, maps or invented restriction against a same-governorate route.
+  Operations reference-list management remains deferred, not implemented here.
+- FR-TOW-005: only active/open towing providers, using the existing Damascus
+  work_days/closure calculation. Authoritative provider_coverage determines A
+  (covers both selected governorates) versus B (does not cover both).
+  A is ordered by origin-base cohort, destination-base cohort, then remaining
+  providers randomly, using SQL CASE + RANDOM(). No ranking label is displayed.
+- FR-TOW-006/007: empty A retains B; the configured contact_phone suffix is
+  omitted entirely when absent. Cards show commercial name, coverage, nullable
+  tow type, phone and «أبلغ المزود», never inspection capabilities or credentials.
+- FR-TOW-008: first consent confirmation creates exactly one towing guest
+  service_requests row and one notifications row transactionally. Further
+  confirmations reuse that parent, guest identity and immutable route.
+  A notification promotes the request to matched; B alone is no_match; later B
+  notifications never downgrade matched. Provider availability and CURRENT
+  coverage are checked at confirmation. Failures roll back both writes.
+- FR-TOW-010: prepared guest wa.me message uses the approved literal template
+  and providers.whatsapp_number, not providers.phone. No permanent template
+  bootstrap/editor is introduced. The displayed contact remains providers.phone.
+- FR-TOW-011 and manual branch of 012/013: after notification, the user can
+  explicitly choose a sharing governorate and dependent region. This is
+  separate from—and never changes—the request route. The approved manual
+  towing_location text is prepared without persisting location or coordinates.
+- FR-TOW-014: fixed non-booking/non-guarantee warning on route, details,
+  confirmation, result and send-location steps. The precise-coverage warning
+  appears with results.
+- Registered-user FR-TOW-002/009, the GPS branch, account/session/OTP work,
+  WhatsApp delivery and Build 6 are outside this authorization.
+
+### HTTP and persistence
+
+- `GET /api/guest-towing/governorates`: active governorates; optional
+  `governorateId` supplies dependent regions for manual U-16 sharing only.
+- `GET /api/guest-towing/providers`: validated origin/destination, A/B cards and
+  nullable support contact. Results are uncached and browsing never writes.
+- `POST /api/guest-towing/requests`: explicit-consent create/append notification.
+  Returns parent/notification IDs, matching status, request-bound continuation
+  proof, and a prepared user-controlled WhatsApp link, delivery=not_implemented.
+- `POST /api/guest-towing/location`: read-only validation of request proof,
+  belonging notification and manual locality; returns a prepared location link.
+
+The existing SESSION_SECRET signs a purpose-separated request-bound proof so
+guessing a request UUID cannot append notifications or disclose another guest's
+location message. This is NOT a login/session: no cookies, account, OTP, new
+secret, token table or browser storage. The proof lives only in component memory
+and is cleared for a new request. Subsequent confirmations lock the parent and
+reject any identity/route change. The existing secret must also be configured
+securely when running outside Replit; missing configuration fails explicitly.
+
+Runtime writes touch only service_requests and notifications. Reads use
+governorates, regions (manual sharing only), providers, provider_coverage,
+tow_types and system_config. No schema/migration or capability-junction changes.
+WhatsApp links are deliberately prepared for a separate user click/Send; the
+platform never calls a messaging API or claims to have sent a WhatsApp message.
+
+### Verification
+
+Build 5 adds 19 backend/contract tests, 2 live Next HTTP smoke tests, and 9 real
+Chromium tests. Together with the unchanged baseline: npm test runs 59 tests;
+npm run test:browser runs 18 (9 inspection, 9 towing).
+Both browser flows use actual handlers and real PostgreSQL, fail-closed API
+interception and outer transactions that always roll back. Snapshot checks
+preserve every table count, all six reference tables and original support config.
+No provider/business/reference test fixtures are committed. The complete
+verification commands above still apply.
+
 ## PWA scope
 
 The shell has Arabic RTL, responsive layout, viewport/safe-area support, and a
 web manifest with an SVG icon. This is PWA groundwork, not a complete offline
 or installability implementation. No service worker, push, caching strategy,
-maps, authentication, integrations, or other business screens are included.
+maps, authentication, integrations, or business screens beyond the authorized
+inspection/towing slices are included.
