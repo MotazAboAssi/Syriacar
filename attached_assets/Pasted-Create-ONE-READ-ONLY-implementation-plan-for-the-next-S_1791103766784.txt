@@ -1,0 +1,50 @@
+Create ONE READ-ONLY implementation plan for the next Syriacar vertical slice: Provider Management.
+
+Use SRS v1.4, DBMS v2.2 and UI/UX v1.3 as the authoritative product baseline, together with the current codebase.
+
+Do NOT modify files, schema, migrations, seeds, dependencies, tests, or configuration.
+Do NOT commit or push.
+Do NOT implement anything.
+
+First inspect the current implementation and identify exactly what Provider functionality already exists and what is missing.
+
+The planned slice must cover only provider-side functionality required by the frozen specifications, including where applicable:
+- provider authentication/access
+- provider profile and service-center information
+- work_days as the authoritative working-hours source
+- daily closure override
+- vehicle capabilities
+- governorate/region coverage
+- incoming customer notifications
+- notification/request history
+- provider-owned edits and any required edit-request workflow
+- server-side authorization/ownership
+- relevant WhatsApp/contact actions
+
+Respect all previously frozen Syriacar decisions:
+- no booking system
+- provider availability means working today/hours, not appointment availability
+- governorate/region matching remains authoritative
+- provider suitability must remain vehicle-aware
+- provider coordinates are presentation-only and must not affect matching
+- no reverse geocoding
+- no expand-search feature
+- do not introduce provider ranking
+- do not change existing Guest or Registered service-request behavior
+- do not create unnecessary schema changes
+
+Explicitly identify:
+1. Existing code that can be reused.
+2. Missing functionality.
+3. Required files/modules/routes/pages.
+4. Whether the existing schema is sufficient.
+5. Any schema change that is genuinely required, with exact reason.
+6. Authentication/authorization implications.
+7. Test strategy.
+8. Suggested vertical-slice implementation order.
+9. Estimated Agent effort/complexity.
+10. Anything that should remain OUT OF SCOPE.
+
+Do not solve ambiguities by guessing. If the frozen documents do not define something, mark it as unresolved and ask for a decision.
+
+The output must be a plan only.
