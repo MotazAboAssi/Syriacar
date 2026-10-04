@@ -1,0 +1,81 @@
+اعتمد Task #16 مع التعديلات النهائية التالية، وحدّث الخطة فقط. لا تنفذ Build بعد.
+
+قرارات النطاق النهائية:
+
+1. Provider authentication:
+- active فقط يسمح بالدخول.
+- pending وdisabled لا يسمحان بالدخول.
+- أي session لمزود أصبح disabled تُرفض عند أول طلب محمي بعد تغيّر الحالة.
+- لا Provider self-registration.
+- لا OTP للمزود.
+- لا password reset/change password ضمن هذه الشريحة.
+- حسابات المزودين تُنشأ من الفريق/Operations لاحقًا.
+
+2. Provider login rate limiting:
+- أعد استخدام PostgreSQL-backed security_rate_limits الحالية.
+- لا تنشئ infrastructure جديدة.
+- لا تخترع أرقامًا جديدة داخل Build.
+- إذا كانت أرقام Provider login غير محددة في frozen docs، استخدم نفس policy الحالية لحماية login فقط إذا كان ذلك يمكن تطبيقه دون تغيير السياسة العامة؛ وإلا توقف عند هذه النقطة ولا تضع رقمًا من عندك.
+
+3. Push:
+- P-08 الكامل مؤجل من هذه الشريحة.
+- لا web-push dependency.
+- لا VAPID.
+- لا service worker خاص بالمزود.
+- لا subscription endpoints.
+- لا post-commit push hooks.
+- لا Scheduled Deployment.
+- provider_push_subscriptions تبقى كما هي دون استعمال فعلي.
+- يجب ألا تدّعي الشريحة اكتمال Push.
+
+4. Daily closure reset:
+- لا job ولا Scheduled Deployment الآن.
+- نفّذ فقط منطق closure/date الصحيح الذي تحتاجه واجهة المزود والمطابقة الحالية.
+- لا تضف reset job أو deployment configuration.
+- إذا كانت reset اليومية تتطلب job حتى تكون الوظيفة صحيحة، توقف واذكر ذلك بدل اختراع scheduler.
+
+5. Customer data in notifications:
+- استخدم البيانات الموجودة حاليًا.
+- بعد user anonymization، اعرض القيمة المحجوبة/غير المتاحة وفق السلوك الحالي الممكن.
+- لا تضف snapshots ولا schema لتجاوز anonymization.
+
+6. Pending edit requests:
+- Provider يستطيع إنشاء الطلب وعرض حالته.
+- لا approval/rejection من Provider.
+- لا Operations UI في هذه الشريحة.
+- إذا وجدت عدة pending requests لنفس الحقل، لا تخترع precedence؛ اعرض الحالة الحالية كما تدعمها schema الحالية واذكر limitation إن كانت الوثائق لا تحدد السلوك.
+
+7. Reopen/closure:
+- لا تضف reopen workflow غير مثبت في الوثائق.
+- زر الإغلاق اليومي يطبق فقط السلوك الموثق.
+
+8. Acceptance account:
+- لا تعدّل seeds الحالية.
+- لا تنشئ onboarding أو Operations account creation ضمن Build.
+- إذا احتاج الاختبار حساب Provider صالحًا، استخدم fixture/test-only mechanism محميًا من production، دون تحويله إلى onboarding feature.
+
+9. Vertical slice execution:
+قسّم التنفيذ إلى slices صغيرة داخل نفس Task:
+A. Provider authentication + protected shell + profile/reference reads + notification list/detail.
+B. Availability/work_days + closure + shared matching availability.
+C. Location + capabilities + specializations.
+D. Edit requests.
+لا تبدأ Push أو Scheduled Deployment.
+
+كل Slice يجب أن يكون قابلًا للاختبار قبل الانتقال للذي يليه.
+
+10. لا تغيّر:
+- Guest behavior
+- Registered behavior
+- matching semantics
+- service request/notification contracts
+- Fix 1/2/3
+- Argon2 parameters
+- DB pool settings
+- schema/migrations إلا إذا أثبت التنفيذ ضرورة حقيقية؛ عندها توقف قبل تغييرها.
+
+بعد التحديث أعطني الخطة النهائية فقط.
+لا Build.
+لا ملفات.
+لا tests.
+لا commit/push.
