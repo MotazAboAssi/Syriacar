@@ -10,43 +10,26 @@ import { authenticatedUser, type User } from "../account/service.ts";
 import { clearCookie, sessionCookie, sessionUserId, now, type AccountRuntime } from "../account/security.ts";
 import { inspectionProviders } from "./inspection.ts";
 import { confirm, location } from "./service.ts";
+import { readJsonBody, RequestBodyError, type BodyReadOptions } from "../../server/http/request-body.ts";
 
 const headers = { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" };
-/** Same Build6 Origin/body rules; kept registered-specific to leave Guest unchanged. */
-async function body(request: Request) {
+/** Same registered Origin rules; Guest and external callbacks keep their policies. */
+function sameOrigin(request: Request) {
   try {
     const origin = new URL(request.headers.get("origin") ?? "");
     const url = new URL(request.url);
     if (!["http:", "https:"].includes(origin.protocol) || origin.protocol !== url.protocol ||
       origin.host !== (request.headers.get("host") ?? url.host)) throw new Error();
   } catch { throw new AccountError(403, "بيانات الطلب غير صالحة."); }
-  if (request.headers.get("content-type")?.split(";")[0].trim().toLowerCase() !== "application/json") {
-    throw new AccountError(422, "بيانات الطلب غير صالحة.");
-  }
-  const reader = request.body?.getReader();
-  if (!reader) throw new AccountError(422, "بيانات الطلب غير صالحة.");
-  const chunks: Uint8Array[] = []; let size = 0;
-  try {
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      size += value.length;
-      if (size > 8192) { await reader.cancel(); throw new AccountError(413, "حجم الطلب أكبر من المسموح."); }
-      chunks.push(value);
-    }
-  } finally { reader.releaseLock(); }
-  try {
-    const bytes = new Uint8Array(size); let offset = 0;
-    for (const part of chunks) { bytes.set(part, offset); offset += part.length; }
-    return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
-  } catch { throw new AccountError(422, "بيانات الطلب غير صالحة."); }
 }
-export function registeredHandlers(connection: () => Connection = getDatabase, runtime: AccountRuntime = {}) {
+export function registeredHandlers(connection: () => Connection = getDatabase, runtime: AccountRuntime = {},
+  bodyOptions: BodyReadOptions = {}) {
   const handle = async (request: Request, action: (db: Connection, user: User, data: unknown) => Promise<unknown>,
     mutation = false, status = 200) => {
     try {
-      const data = mutation ? await body(request) : undefined;
+      if (mutation) sameOrigin(request);
       const id = await sessionUserId(request, runtime);
+      const data = mutation ? await readJsonBody(request, bodyOptions) : undefined;
       const result = await connection().transaction(async tx => {
         const user = await authenticatedUser(id, tx);
         const output = await action(tx, user, data);
@@ -55,6 +38,7 @@ export function registeredHandlers(connection: () => Connection = getDatabase, r
       });
       return Response.json(result, { status, headers: { ...headers, "Set-Cookie": await sessionCookie(id, runtime) } });
     } catch (error) {
+      if (error instanceof RequestBodyError) error = new AccountError(error.status, error.message);
       if (error instanceof AccountError) return Response.json(error.detail, { status: error.status,
         headers: { ...headers, ...(error.status === 401 ? { "Set-Cookie": clearCookie } : {}) } });
       if (error instanceof InspectionError || error instanceof TowingError) {

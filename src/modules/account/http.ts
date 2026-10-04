@@ -10,6 +10,7 @@ import * as account from "./service.ts";
 import { listVehicles, references, writeVehicle } from "./vehicles.ts";
 import { statusCallback } from "./callback.ts";
 import { readRegistrationProof, clearRegistrationCookie } from "./registration-flow.ts";
+import { readJsonBody, RequestBodyError, type BodyReadOptions } from "../../server/http/request-body.ts";
 
 const headers = { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" };
 function sameOrigin(request: Request) {
@@ -25,32 +26,9 @@ function sameOrigin(request: Request) {
   } catch { /* Reject absent/malformed/opaque Origin. */ }
   if (!valid) throw new AccountError(403, "بيانات الطلب غير صالحة.");
 }
-async function body(request: Request) {
-  if (request.headers.get("content-type")?.split(";")[0].trim().toLowerCase() !== "application/json") {
-    throw new AccountError(422, "بيانات الطلب غير صالحة.");
-  }
-  const reader = request.body?.getReader();
-  if (!reader) throw new AccountError(422, "بيانات الطلب غير صالحة.");
-  const chunks: Uint8Array[] = [];
-  let size = 0;
-  try {
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      size += value.length;
-      if (size > 8192) { await reader.cancel(); throw new AccountError(413, "حجم الطلب أكبر من المسموح."); }
-      chunks.push(value);
-    }
-  } finally { reader.releaseLock(); }
-  try {
-    const bytes = new Uint8Array(size);
-    let offset = 0;
-    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
-    return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
-  } catch { throw new AccountError(422, "بيانات الطلب غير صالحة."); }
-}
 export function accountHandlers(connection: () => Connection = getDatabase, runtime: AccountRuntime = {},
-  limits: AccountLimits = getAccountLimits()) {
+  limits: AccountLimits = getAccountLimits(), bodyOptions: BodyReadOptions = {}) {
+  const body = (request: Request) => readJsonBody(request, bodyOptions);
   const responseHeaders = (cookies: string[] = []) => {
     const result = new Headers(headers);
     for (const cookie of cookies) result.append("Set-Cookie", cookie);
@@ -63,6 +41,7 @@ export function accountHandlers(connection: () => Connection = getDatabase, runt
         ...(result.cookie ? [result.cookie] : []), ...(result.cookies ?? []),
       ]) });
     } catch (error) {
+      if (error instanceof RequestBodyError) error = new AccountError(error.status, error.message);
       if (databaseFailure(error)) error = unavailable();
       if (error instanceof AccountError) {
         const errorHeaders = responseHeaders([
@@ -81,13 +60,15 @@ export function accountHandlers(connection: () => Connection = getDatabase, runt
     data: account.profile(user), cookie: await sessionCookie(user.id, runtime),
   });
   const protectedResponse = (request: Request,
-    action: (db: Connection, user: account.User) => Promise<unknown>, mutation = false, remove = false, status = 200) =>
+    action: (db: Connection, user: account.User, data: unknown) => Promise<unknown>,
+    mutation = false, remove = false, status = 200) =>
     response(async () => {
       if (mutation) sameOrigin(request);
       const id = await sessionUserId(request, runtime);
+      const input = mutation ? await body(request) : undefined;
       const data = await connection().transaction(async (tx) => {
         const user = await account.authenticatedUser(id, tx);
-        const result = await action(tx, user);
+        const result = await action(tx, user, input);
         if (!remove) await tx.update(users).set({ lastActiveAt: now(runtime) }).where(eq(users.id, id));
         return result;
       });
@@ -106,13 +87,17 @@ export function accountHandlers(connection: () => Connection = getDatabase, runt
     }),
     verify: (request: Request) => response(async () => {
       sameOrigin(request);
-      return { ...await authResponse(await account.verifyOtp(await body(request), connection(), runtime,
-        await readRegistrationProof(request, runtime), limits)), cookies: [clearRegistrationCookie] };
+      const input = await body(request);
+      const proof = await readRegistrationProof(request, runtime);
+      return { ...await authResponse(await account.verifyOtp(input, connection(), runtime,
+        proof, limits)), cookies: [clearRegistrationCookie] };
     }),
     resend: (request: Request) => response(async () => {
       sameOrigin(request);
-      const result = await account.resend(await body(request), connection(), runtime, limits,
-        await readRegistrationProof(request, runtime));
+      const input = await body(request);
+      const proof = await readRegistrationProof(request, runtime);
+      const result = await account.resend(input, connection(), runtime, limits,
+        proof);
       return { data: result.state, cookie: result.cookie };
     }),
     login: (request: Request) => response(async () => {
@@ -121,14 +106,18 @@ export function accountHandlers(connection: () => Connection = getDatabase, runt
     }),
     logout: (request: Request) => response(async () => {
       sameOrigin(request);
+      // Keep bodyless logout supported, but bound/validate a supplied body.
+      if (request.body) await body(request);
       return { data: { ok: true }, cookie: clearCookie };
     }),
     profile: (request: Request) => protectedResponse(request, async (_db, user) => account.profile(user)),
     saveProfile: (request: Request) => protectedResponse(request,
-      async (db, user) => account.saveHome(await body(request), user, db), true),
+      (db, user, data) => account.saveHome(data, user, db), true),
     deleteAccount: (request: Request) => response(async () => {
       sameOrigin(request);
       const id = await sessionUserId(request, runtime);
+      // DELETE has no business payload; a supplied body must finish before DB.
+      if (request.body) await body(request);
       return { data: await account.deleteAccount(id, connection(), runtime, limits), cookie: clearCookie };
     }),
     references: (request: Request) => protectedResponse(request, (db) => references(db)),
@@ -136,9 +125,9 @@ export function accountHandlers(connection: () => Connection = getDatabase, runt
     vehicle: (request: Request, id: string) => protectedResponse(request,
       async (db, user) => (await listVehicles(db, user.id, id))[0]),
     addVehicle: (request: Request) => protectedResponse(request,
-      async (db, user) => writeVehicle(db, user.id, await body(request), runtime), true, false, 201),
+      (db, user, data) => writeVehicle(db, user.id, data, runtime), true, false, 201),
     editVehicle: (request: Request, id: string) => protectedResponse(request,
-      async (db, user) => writeVehicle(db, user.id, await body(request), runtime, id), true),
+      (db, user, data) => writeVehicle(db, user.id, data, runtime, id), true),
     callback: (request: Request) => response(async () => {
       // URL must be HTTPS; do not trust a client-supplied forwarded-proto override.
       if (new URL(request.url).protocol !== "https:" ||
