@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Syriacar — تقرير تسليم Build 7</title>
+<style>
+body{margin:0;background:#f8faf8;color:#213b3d;font:16px/1.9 Tahoma,Arial,sans-serif}
+main{max-width:900px;margin:32px auto;padding:28px;background:#fff;border:1px solid #d8e3dc;border-radius:16px}
+h1,h2{line-height:1.5;color:#176b58}h2{margin-top:30px;font-size:22px}
+table{border-collapse:collapse;width:100%;margin:16px 0}th,td{border:1px solid #d8e3dc;padding:10px;text-align:right}
+code{direction:ltr;unicode-bidi:isolate;display:inline-block;overflow-wrap:anywhere;font:14px/1.8 monospace}
+.note{padding:16px;background:#eff7ee;border-right:4px solid #176b58}
+li{margin-bottom:8px}@media(max-width:600px){main{margin:0;padding:18px;border-radius:0}th,td{padding:8px}}
+</style>
+<main>
+<h1>تقرير تسليم Build 7 — خدمات الفحص والسطحة للمسجّل</h1>
+<p>التاريخ: 4 أكتوبر 2026. التنفيذ وفق الخطة المعتمدة، SRS v1.4 وDBMS v2.2 وUI/UX v1.3.</p>
+<p class="note"><strong>النتيجة:</strong> اكتمل نطاق Build 7 ونجحت اختبارات المسجّل والـregression للضيف والحساب. لا عائق جديد يستلزم STOP/report. لم يبدأ تنفيذ مرحلة لاحقة.</p>
+<h2>ما تم تنفيذه</h2>
+<ul>
+<li><strong>الفحص:</strong> اختيار مركبة مملوكة وغير rejected ومحلية نشطة إلزامية؛ حالة المركبات الفارغة ترتبط بإضافة مركبة U-07، والمرفوضة غير قابلة للاختيار مع رابط التعديل الحالي.</li>
+<li>المطابقة AND للأبعاد الخمسة بالـIDs، وyear_category من قاعدة البيانات، مع active/open بتوقيت دمشق والمحلية. التخصصات عرض فقط، ولا wildcard للقدرات المفقودة.</li>
+<li>عرض OSM/Leaflet مع markers للزوج الصالح فقط، وقائمة للمزود بلا إحداثيات أو بإحداثيات غير صالحة. الإحداثيات لا تؤثر على suitability. fallback عند فشل tiles أو تجاوز خمس ثوانٍ، دون تغيير المحلية أو المطابقة.</li>
+<li>المناسب فقط يقبل إشعارًا. no_match يتطلب تأكيدًا صريحًا وينشئ parent بلا notification؛ يظهر contact_phone المضبوط فقط بلا رقم بديل.</li>
+<li><strong>السطحة:</strong> محافظة السكن النشطة prefill للانطلاق مع إمكان التعديل، والمحافظة غير النشطة تتركه غير محدد دون تعديل الملف. destination إلزامي، ولا اختيار مركبة.</li>
+<li>Section A/B وترتيب origin ثم destination ثم RANDOM من المنطق القائم. التأكيدات المتتابعة تستخدم parent واحدًا؛ B→A→B يرقّي إلى matched دون downgrade.</li>
+<li><strong>الموقع:</strong> GPS للعرض في الفحص؛ وفي السطحة يُجهّز رابط Google Maps في ذاكرة المتصفح فقط. fallback محافظة/منطقة يدوي يتحقق من ملكية parent وnotification ولا يغيّر مسار الطلب.</li>
+<li><strong>التواصل:</strong> روابط wa.me من whatsapp_number، لا phone، وبالقوالب FR-INS-013 وFR-TOW-009 والموقع. المستخدم يرسل الرسالة بنفسه؛ لا WhatsApp API لإشعارات المزود.</li>
+<li><strong>الحماية:</strong> جلسة JWT الحالية، فحص المستخدم الموجود/النشط/غير المحذوف، ملكية المركبة والـparent والـnotification، تثبيت سياق continuation، Origin للكتابة، body محدود، وإعادة تحقق الحالة داخل transaction.</li>
+<li><strong>الواجهة:</strong> RTL، عرض 320px، bottom/side sheets، focus ولوحة مفاتيح، targets ≥44px، منع الضغط المكرر أثناء التأكيد، إبطال النتائج والردود القديمة، وإعادة التوجيه إلى تسجيل الدخول عند انتهاء الجلسة.</li>
+</ul>
+<h2>المسارات والملفات</h2>
+<table>
+<thead><tr><th>المجموعة</th><th>الملفات</th></tr></thead>
+<tbody>
+<tr><td>الصفحات</td><td><code>src/app/inspection/page.tsx</code><br><code>src/app/towing/page.tsx</code></td></tr>
+<tr><td>API الجديد</td><td><code>src/app/api/inspection/providers/route.ts</code><br><code>src/app/api/inspection/requests/route.ts</code><br><code>src/app/api/towing/requests/route.ts</code><br><code>src/app/api/towing/location/route.ts</code></td></tr>
+<tr><td>منطق المسجّل</td><td>تحت <code>src/modules/registered-services/</code>:<br><code>contracts.ts</code>، <code>http.ts</code>، <code>inspection.ts</code>، <code>service.ts</code></td></tr>
+<tr><td>الواجهة</td><td>تحت <code>src/modules/registered-services/ui/</code>:<br><code>inspection-page.tsx</code>، <code>inspection-map.tsx</code>، <code>towing-page.tsx</code>، <code>service-common.tsx</code>، <code>registered-services.css</code></td></tr>
+<tr><td>ربط الحساب</td><td><code>src/modules/account/ui/account-app.tsx</code>: إضافة رابطَي الخدمات في مساحة الحساب فقط.</td></tr>
+<tr><td>التبعيات</td><td><code>package.json</code> و<code>package-lock.json</code>: Leaflet لعرض OSM و@types/leaflet لدعم TypeScript، بعد توضيح السبب قبل التثبيت.</td></tr>
+<tr><td>اختبارات API/PG</td><td><code>tests/fixtures/registered-services.mjs</code><br><code>tests/registered-services.test.mjs</code><br><code>tests/registered-services-smoke.test.mjs</code></td></tr>
+<tr><td>اختبارات المتصفح</td><td><code>tests/browser/registered-harness.mjs</code><br><code>tests/browser/registered-services.test.mjs</code></td></tr>
+</tbody>
+</table>
+<h2>نتائج التحقق</h2>
+<table>
+<thead><tr><th>الفحص</th><th>النتيجة</th></tr></thead>
+<tbody>
+<tr><td><code>npm test</code></td><td>121/121 ناجحة: baseline كامل 87 + 34 اختبارًا جديدًا.</td></tr>
+<tr><td><code>npm run test:browser</code></td><td>52/52 ناجحة: baseline كامل 26 + 26 اختبارًا جديدًا، في Chromium فعلي.</td></tr>
+<tr><td><code>npm run typecheck</code></td><td>ناجح.</td></tr>
+<tr><td><code>npm run build</code></td><td>بناء الإنتاج ناجح، والمسارات الجديدة ضمن مخرجات Next.</td></tr>
+<tr><td><code>npm run db:verify-isolated</code></td><td>243 assertion ناجحة و158 صفًا مرجعيًا؛ 24 جدولًا و165 عمودًا و40 FK. temporary schema وfixtures تراجعت بالكامل؛ البيانات الحقيقية والطلب السابق محفوظان؛ صفر fixtures دائمة.</td></tr>
+<tr><td>تشغيل التطبيق</td><td>Syriacar workflow يعمل؛ السجل الحالي بلا crash. لقطة unauthenticated تؤكد الانتقال إلى تسجيل الدخول، والواجهات المسجّلة تحققت باختبارات المتصفح المعزولة ولقطات desktop/mobile.</td></tr>
+</tbody>
+</table>
+<h2>التغطية الأساسية الجديدة</h2>
+<ul>
+<li>القدرات الخمس مستقلّة، pending/verified مقابل rejected، year_category من DB، إحداثيات سليمة/null/غير صالحة، وحدود ساعات دمشق.</li>
+<li>User A/B، مركبة مستخدم آخر، parent ضيف أو خدمة أخرى، تغيير المركبة/المحلية/المسار، notification لا يتبع parent، جلسات missing/tampered/expired/disabled/deleted وغير موجودة.</li>
+<li>رفض client identity/capabilities/matching/GPS والحقول غير المعتمدة، الحماية عبر Next الفعلي وOrigin العام، cache-control=no-store.</li>
+<li>إنشاء السجلات بالحقول registered الصحيحة وguest fields=NULL؛ rollback عند فشل notification، بما فيه تراجع promotion للـparent السابق؛ تاريخ matched يبقى محفوظًا.</li>
+<li>الخريطة المختلطة، مزود مناسب بلا marker، فشل/timeout، no_match/cancel/refresh، stale responses، busy، home active/absent/inactive، same-governorate، B→A→B، قوالب WhatsApp، GPS success/denial وmanual fallback.</li>
+<li>الـsheets وRTL و320px وحجم controls، فتح marker بلوحة المفاتيح، وعدم overflow أفقي.</li>
+</ul>
+<h2>حدود التحقق والمحافظة على النطاق</h2>
+<ul>
+<li>لا schema change ولا migration مطبّقة على schema الحقيقي. فحص DB استخدم rollback-only isolation.</li>
+<li>Guest contracts وflows وملفات اختبارات baseline لم تُعدّل. أُعيد استخدام المراجع العامة والمنطق القائم بالقراءة/import فقط.</li>
+<li>لا OTP/Whapi حي في الاختبارات، ولا إرسال رسائل فعلي. الحسابات والمركبات test-only داخل معاملات PostgreSQL المتراجعة؛ لا credentials حقيقية في harness.</li>
+<li>اختبارات المتصفح تعرض التطبيق الفعلي وتستدعي handlers الحقيقية ضمن PG rollback-only عبر interception يمنع كل fallback إلى API حي. tiles وحالات geolocation محاكاة للتحقق المتكرر؛ لا ادعاء بالتحقق من توفر OSM الخارجي في جميع الشبكات أو GPS جهاز حقيقي.</li>
+<li>lookup/location والقراءة لا تنشئ أو تعدّل requests/notifications؛ تحديث نشاط المستخدم وتجديد cookie يتبع جلسة Build 6 الحالية.</li>
+<li>لم تُغيّر إعدادات النشر أو OTP/Whapi callback؛ لم يبدأ Build لاحق، ولم تُضف booking أو ranking أو geocoding أو Google API أو GPS storage/logging.</li>
+</ul>
+</main>
+</html>

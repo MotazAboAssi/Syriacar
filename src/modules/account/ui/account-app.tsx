@@ -210,7 +210,7 @@ function OtpPage() {
 }
 function AccountHome({profile}:ScreenProps) {
   return <><p className="sc-kicker">أهلًا {profile?.name}</p><h1 className="sc-title">مساحتك ومركباتك</h1><p className="sc-lead">إدارة بياناتك ومركباتك المسجلة في مكان واحد.</p>
-    <div className="sc-summary"><Link href="/account/vehicles"><strong>مركباتي</strong><span>عرض المركبات وإضافة مركبة جديدة</span></Link><Link href="/account/profile"><strong>الملف الشخصي</strong><span>محافظة السكن وإعدادات الحساب</span></Link></div>
+    <div className="sc-summary"><Link href="/account/vehicles"><strong>مركباتي</strong><span>عرض المركبات وإضافة مركبة جديدة</span></Link><Link href="/account/profile"><strong>الملف الشخصي</strong><span>محافظة السكن وإعدادات الحساب</span></Link><Link href="/inspection"><strong>الفحص الفني</strong><span>ابحث عن مزود فحص لمركبتك المسجلة</span></Link><Link href="/towing"><strong>خدمة السطحة</strong><span>اعرض مزودي السطحات على مسارك</span></Link></div>
   </>;
 }
 function ProfilePage({profile}:ScreenProps) {

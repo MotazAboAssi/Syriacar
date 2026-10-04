@@ -42,3 +42,17 @@ mtime_ms = 1791057636758
 storage_uri = "gcs://replit-rams-assets-kirk/rams/assets/repl:425e664a-7742-4dfe-b607-b653a17726d1/ed9cb3b8-be24-4209-879a-52679f98f17a/862cf5e3-2794-4067-a14a-22b24fb0c7dd"
 storage_version_token = "1791057699852735"
 content_type = "text/markdown"
+
+[[outputs]]
+id = "6257Dvjp_z14um6UO8W_W"
+uri = "file://reports/build7-verification.html"
+type = "html"
+title = "تقرير تسليم Build 7"
+description = "تقرير عربي بالمسارات والملفات، نتائج 121 اختبارًا آليًا و52 اختبار متصفح، تحقق قاعدة البيانات، وحدود التحقق والنطاق."
+logical_id = "2c67d151-2e61-40a0-a292-22f92d014624"
+content_hash = "sha256:e989511a150ab0bb5bdc4b7b370d1a47859d2c720870d9585eb22128e9bd396a"
+size = 10223
+mtime_ms = 1791083792906
+storage_uri = "gcs://replit-rams-assets-kirk/rams/assets/repl:425e664a-7742-4dfe-b607-b653a17726d1/2c67d151-2e61-40a0-a292-22f92d014624/e751e037-2515-45c6-a24f-0801796b60b1"
+storage_version_token = "1791083842932127"
+content_type = "text/html"
