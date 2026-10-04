@@ -1,0 +1,323 @@
+نبدأ الآن تنفيذ Blocker 2 — PostgreSQL Rate Limiting.
+
+مهم:
+هذه مرحلة PLAN فقط.
+لا تعدّل أي ملف.
+لا تنشئ migration.
+لا تثبّت packages.
+لا تغيّر DB.
+لا commit/push.
+لا تبدأ Blocker 3.
+لا تغيّر Registration Flow الذي تم إنجازه في Blocker 1.
+
+أريد خطة تنفيذية دقيقة لـBlocker 2 فقط، بناءً على الكود الحالي بعد Blocker 1.
+
+الهدف:
+استبدال rate limiting الموجود في الذاكرة بآلية PostgreSQL مشتركة بين جميع processes/instances، بدون Redis أو خدمة خارجية.
+
+==================================================
+1. SCOPE
+==================================================
+
+يشمل فقط:
+- PostgreSQL-backed rate limiting.
+- login protection.
+- registration limits.
+- OTP send/resend/verification limits.
+- account deletion limit.
+- تعديل المسارات الحالية اللازمة لدمج limiter.
+- migration واحدة جديدة.
+- الاختبارات اللازمة.
+
+لا يشمل:
+- Guest rate limits (Blocker 3 لاحقًا).
+- IP resolver الجديد.
+- أي feature أخرى.
+- MEDIUM/LOW/INFO security findings.
+
+==================================================
+2. IP — مهم جدًا
+==================================================
+
+لا يوجد حتى الآن IP contract موثوق من Replit.
+
+لذلك:
+- لا تستخدم X-Forwarded-For كحقيقة موثوقة.
+- لا تستخدم X-Real-IP.
+- لا تنشئ IP resolver.
+- لا تستخدم bucket باسم "unknown".
+- لا تضف أي IP-based security decision جديد في هذه المرحلة.
+
+صمّم limiter بحيث تكون phone/account quotas قابلة للتنفيذ الآن، وتكون طبقة IP قابلة للإضافة لاحقًا دون إعادة تصميم الجدول أو core admission logic.
+
+إذا كانت الخطة السابقة تحتوي على IP quotas، ضعها في التصميم كـdeferred adapter فقط ولا تنفذها.
+
+==================================================
+3. DATABASE DESIGN
+==================================================
+
+راجع schema الحالية وحدد minimal schema لجدول واحد فقط:
+
+security_rate_limits
+
+المتوقع مبدئيًا:
+- scope
+- key_hash
+- count
+- window_expires_at
+- blocked_until nullable
+- retire_at
+
+Composite primary key:
+(scope, key_hash)
+
+Index:
+retire_at
+
+لا تضف:
+- raw phone
+- raw IP
+- events table
+- foreign keys غير ضرورية
+- enum جديد إذا لم يكن ضروريًا
+- جداول إضافية.
+
+تحقق أن migration واحدة جديدة تكفي ولا تعدّل foundation migration.
+
+==================================================
+4. ATOMIC ADMISSION
+==================================================
+
+أريد تصميمًا ذريًا حقيقيًا.
+
+لا يجوز:
+check -> ثم increment منفصل.
+
+يجب أن يكون القرار والزيادة ذريين تحت concurrency.
+
+حدد:
+- SQL/Drizzle transaction strategy.
+- كيفية إنشاء bucket عند أول طلب.
+- كيفية reset عند انتهاء window.
+- كيفية منع تجاوز limit عند race.
+- كيفية التعامل مع blocked_until.
+- مصدر الوقت: PostgreSQL NOW() وليس وقت Node المحلي.
+
+==================================================
+5. LOCK ORDERING
+==================================================
+
+هذه أهم نقطة.
+
+الكود الحالي يحتوي مسارات يمكن أن تأخذ locks مختلفة، ومنها:
+- createChallenge/send quota
+- retry/send claim
+- challenge locks
+
+أريد منك فحص المسارات الحالية وتحديد كل مكان يأخذ:
+- advisory lock
+- user lock
+- challenge lock
+- rate-limit row lock
+
+ثم حدد ترتيبًا موحدًا يمنع deadlock.
+
+مبدئيًا لا تفترض أن هذا الترتيب صحيح؛ أثبته من الكود الحالي:
+
+phone advisory lock
+→ user row lock عند الحاجة
+→ challenge lock
+→ rate-limit locks بترتيب ثابت
+→ business writes
+
+إذا كان هناك مسار يحتاج ترتيبًا مختلفًا، حدده وصححه في الخطة.
+
+ممنوع فتح transaction ثانية أو pool connection ثانية داخل transaction موجودة.
+
+==================================================
+6. WHAPI
+==================================================
+
+لا توجد transaction مفتوحة أثناء:
+- HTTP request إلى Whapi.
+- الانتظار بين retries.
+
+عند OTP send:
+- admission يتم قبل network call.
+- إذا فشل admission: لا ترسل.
+- إذا تم admission ثم فشل network: لا تعكس quota.
+- retry يحتاج admission جديد.
+- لا يتم تغيير codeHash إلى رمز جديد إذا تم رفض retry قبل الإرسال.
+- لا تجعل callback الخاص بإرسال سابق يتعامل مع OTP جديد على أنه نفس الرسالة.
+
+راجع التفاعل مع callback الموجود حاليًا.
+
+==================================================
+7. LIMITS
+==================================================
+
+استخدم هذه القيم كنقطة البداية ولا تغيّرها إلا إذا وجدت تعارضًا تقنيًا واضحًا:
+
+Registration:
+- phone: 3/hour
+
+Login:
+- phone: 5 failures/15 min
+- blocked: 15 min
+
+OTP send:
+- phone: 5/hour
+
+Resend:
+- phone send budget + existing 2-minute cooldown/OTP expiry
+
+OTP verification:
+- phone: 30/hour
+- challenge: existing 5 wrong attempts
+
+Account deletion:
+- authenticated account: 5/hour
+
+IP limits:
+- DEFERRED
+- لا implementation حاليًا.
+
+مهم:
+لا تستخدم login attempt count كبديل عن rate-limit bucket.
+لا تجعل rejected requests تمدد blocked_until.
+
+==================================================
+8. FAILURE SEMANTICS
+==================================================
+
+إذا تعذر الوصول إلى rate-limit database:
+- fail closed
+- 503
+- لا إرسال OTP
+- لا إنشاء/تفعيل account operation محمية
+- لا fallback إلى in-memory Map.
+
+إذا تم رفض quota:
+- 429
+- رسالة عربية عامة
+- Retry-After مناسب
+- لا تكشف تفاصيل bucket الداخلية.
+
+إذا كان login محظورًا:
+- لا تسمح حتى بكلمة المرور الصحيحة بتجاوز lockout.
+
+==================================================
+9. CLEANUP
+==================================================
+
+صمم cleanup محدودًا:
+
+- indexed by retire_at.
+- batch محدود.
+- FOR UPDATE SKIP LOCKED إذا كان ضروريًا.
+- لا يحذف bucket ما زالت فعالة.
+- لا يسبب lock ordering عكسي.
+- لا يحتاج cron أو service جديد.
+
+حدد كيف سيتم تشغيل cleanup في MVP:
+- lazy cleanup داخل limiter؟
+- أم helper عند admissions؟
+اختر أبسط حل آمن ولا تضف scheduler جديدًا.
+
+==================================================
+10. TESTING PLAN
+==================================================
+
+أريد اختبارات حقيقية وليس mocks فقط:
+
+A. atomic boundary:
+- عند limit N، N requests مقبولة.
+- request N+1 مرفوضة.
+- concurrent requests لا تتجاوز N.
+
+B. persistence:
+- limiter state يبقى بعد إعادة إنشاء limiter/process.
+
+C. shared DB:
+- connections مستقلة ترى نفس counter.
+
+D. login:
+- 5 failures => block.
+- السادس مرفوض.
+- النجاح لا يتجاوز block.
+- بعد 15 min يمكن المحاولة.
+- rejected requests لا تمدد lock.
+
+E. registration:
+- 3/hour phone.
+- الرابع 429.
+
+F. OTP:
+- send budget.
+- retry budget.
+- rejected retry لا يغير codeHash.
+- callback السابق لا يكسر الحالة الجديدة.
+
+G. concurrency/deadlock:
+- resend مقابل retry.
+- registration مقابل verification.
+- عدة connections مع pool صغيرة.
+- لا deadlock.
+
+H. DB failure:
+- limiter unavailable => 503.
+- لا business write ولا Whapi call.
+
+I. schema:
+- migration succeeds.
+- existing 24 business tables unchanged.
+- reference data unchanged.
+
+==================================================
+11. TEST DATABASE
+==================================================
+
+المشروع لديه isolated DB/schema verification وآليات اختبار موجودة.
+
+راجعها أولًا.
+
+لا تفترض أن rollback على connection واحدة يكفي لاختبارات shared rate limiting.
+
+حدد طريقة اختبار concurrency باستخدام connections مستقلة وقاعدة/Schema مناسبة، بدون المساس ببيانات التطوير الحالية.
+
+==================================================
+12. OUTPUT
+==================================================
+
+لا تنفذ.
+
+أعطني فقط:
+
+1. Verdict:
+   READY FOR BUILD / NEEDS REVISION
+
+2. schema النهائي المقترح للجدول.
+
+3. lock ordering النهائي.
+
+4. الملفات التي ستتغير.
+
+5. migration المطلوبة.
+
+6. طريقة دمج limiter مع:
+   registration
+   login
+   OTP send
+   OTP resend/retry
+   OTP verification
+   account deletion
+
+7. طريقة التعامل مع Whapi.
+
+8. cleanup strategy.
+
+9. الاختبارات الحرجة.
+
+10. أي خطر أو تعارض اكتشفته في الكود الحالي.
+
+لا تبدأ التنفيذ حتى أراجع الخطة.
