@@ -1,0 +1,296 @@
+# Syriacar — Build 7 Plan Request
+
+## Registered User Inspection + Registered User Towing
+
+أنت تعمل على Syriacar وفق الـbaseline التالي فقط:
+
+* SRS v1.4
+* DBMS v2.2
+* UI/UX v1.3
+* Build 6 الحالي هو baseline المنفذ والمختبر.
+* Build 4 Guest Inspection وBuild 5 Guest Towing يجب ألا يتراجعا.
+
+## مهم جدًا
+
+هذا الطلب هو **Plan فقط**.
+
+لا تعدّل أي ملف.
+لا تنشئ migration.
+لا تنشئ endpoint.
+لا تنفذ الكود.
+لا تثبت packages جديدة.
+
+أريد منك تحليل المستودع الحالي والوثائق الحالية وإعطاء خطة تنفيذ Build 7 فقط.
+
+إذا وجدت أي حالة لا تغطيها الوثائق أو هذا الـContract، **توقف واذكرها بدل اختراع قرار**.
+
+---
+
+# القرارات المثبتة لـBuild 7
+
+## 1. Registered Inspection — vehicle selection
+
+المستخدم المسجل يجب أن يختار مركبة محفوظة قبل إكمال مسار الفحص.
+
+إذا لم يملك أي مركبة:
+
+* تظهر حالة فارغة واضحة:
+  "أضف مركبتك أولًا لاستخدام خدمة الفحص."
+* زر "إضافة مركبة" يفتح مسار U-07.
+* لا يتم إنشاء طلب فحص بدون مركبة.
+
+## 2. Vehicle status
+
+المركبات:
+
+* `verified` → مسموحة.
+* `pending_verification` → مسموحة.
+* `rejected` → غير مسموحة لطلبات الخدمة الجديدة.
+
+لا تعرض `pending_verification` للمستخدم كتسمية حالة، وفق UI/UX.
+
+المستخدم يستطيع تعديل المركبة المرفوضة وفق Build 6، لكن لا يستطيع استخدامها في طلب جديد.
+
+## 3. Vehicle ownership / IDOR
+
+أي `vehicle_id` يأتي من العميل يجب التحقق منه server-side:
+
+* المركبة تخص المستخدم الحالي.
+* المستخدم الحالي authenticated وactive وغير deleted.
+* المركبة ليست `rejected`.
+
+لا تعتمد على تحقق client-side.
+
+أضف اختبارات صريحة لمحاولة User A استخدام vehicle_id الخاص بـUser B.
+
+عند الرفض:
+
+* لا ينشأ service_request.
+* لا ينشأ notification.
+
+لا تعرض UUID داخليًا بلا حاجة.
+
+## 4. Registered Inspection Matching
+
+المزودون المفتوحون يعرضون وفق منطق Build 4 الحالي.
+
+للمستخدم المسجل:
+
+* المزود المناسب للمركبة يحصل على التمييز البصري المطلوب.
+* المزود غير المناسب لا يعتبر matched.
+
+لا تغير منطق Build 4 الخاص بحالة المزود المفتوح/المغلق إلا إذا كان مطلوبًا مباشرة لدعم المسجل.
+
+## 5. No-match inspection
+
+إذا لم يوجد مزود مفتوح مناسب للمركبة:
+
+* `service_request.matching_status = no_match`
+* لا يتم إنشاء notification لمزود.
+* تظهر U-12.
+* رقم الفريق يقرأ من `system_config.contact_phone`.
+* لا hardcode للرقم.
+* لا تضف ميزة "توسيع البحث".
+
+في هذه الحالة لا تعرض المزودين غير المناسبين كخيارات مطابقة.
+
+## 6. Registered Inspection Notification
+
+عند اختيار مزود مناسب ثم التأكيد:
+
+1. إنشاء `service_request`.
+2. إنشاء `notification`.
+3. `user_type = registered`.
+4. `user_id = authenticated user`.
+5. `guest_name = NULL`.
+6. `guest_phone = NULL`.
+7. `vehicle_id = selected owned non-rejected vehicle`.
+8. فتح wa.me باستخدام:
+   `providers.whatsapp_number`
+9. إظهار `providers.phone` للمستخدم للاتصال الهاتفي.
+10. رسالة المسجل تستخدم قالب FR-INS-013.
+
+لا تستخدم `providers.phone` لبناء wa.me.
+
+## 7. Multiple notifications
+
+يبقى قرار SRS كما هو:
+
+يمكن للمستخدم إرسال إشعارات متعددة لمزودين مختلفين.
+
+لا تضف global one-request-per-user restriction.
+
+لكن امنع duplicate accidental submission من نفس الواجهة أثناء الطلب، مثل تعطيل زر التأكيد أثناء الإرسال، بدون اختراع idempotency/business rule جديدة.
+
+## 8. Registered Towing
+
+مسار السطحة للمسجل:
+
+* origin يُملأ تلقائيًا من `users.home_governorate_id` إن وجد.
+* origin قابل للتعديل.
+* destination مطلوب.
+* إذا لم توجد home governorate، يبدأ origin فارغًا ويختاره المستخدم يدويًا.
+* لا توجد vehicle selection في towing.
+
+## 9. Towing matching
+
+استخدم منطق Build 5 الحالي.
+
+Section A:
+
+* providers covering both origin and destination.
+
+الترتيب:
+
+1. provider governorate = origin governorate.
+2. provider governorate = destination governorate.
+3. remaining providers random.
+
+Section B:
+
+* active/open providers that do not cover both.
+
+لا تضف ranking labels.
+
+## 10. Registered Towing Notification
+
+عند التأكيد:
+
+* create service_request.
+* create notification.
+* `user_type = registered`.
+* `user_id = authenticated user`.
+* guest fields NULL.
+* vehicle_id NULL.
+* origin/destination persisted.
+* wa.me uses `providers.whatsapp_number`.
+* registered towing message uses FR-TOW-009.
+
+## 11. Location
+
+ابقَ ملتزمًا بمنطق Build 5 الحالي:
+
+* coordinates → Google Maps URL.
+* no coordinates → governorate + region selection.
+* لا reverse geocoding.
+* لا GPS persistence كـuser location.
+
+## 12. Session
+
+استخدم authentication/session الموجودة في Build 6.
+
+أي protected request يجب أن:
+
+* يتحقق من JWT.
+* يتحقق من user existence.
+* يتحقق من active/non-deleted.
+* يرفض expired/invalid session.
+
+لا تضف sessions table.
+
+## 13. UI
+
+التزم بـUI/UX v1.3:
+
+Inspection:
+
+* saved vehicle flow.
+* map-first.
+* fallback locality/list behavior.
+* provider Bottom Sheet mobile.
+* provider Side Sheet desktop.
+* RTL.
+* 320px minimum.
+* touch targets >=44px.
+
+Towing:
+
+* list-only.
+* registered origin prefill.
+
+لا تضف شاشات أو controls غير مطلوبة.
+
+## 14. Schema
+
+لا تضف:
+
+* tables
+* columns
+* enums
+* migrations
+
+إلا إذا اكتشفت تعارضًا حقيقيًا يمنع تنفيذ Contract.
+
+إذا وجدت تعارضًا:
+STOP and report it before implementation.
+
+## 15. Build 4/5 regression
+
+لا تعدّل guest flows إلا عند الضرورة.
+
+يجب أن تبقى اختبارات:
+
+* Guest Inspection 38 + browser 9.
+* Guest Towing tests + browser coverage.
+* DB assertions 243.
+* Reference data 158 rows.
+
+---
+
+# المطلوب منك في Plan
+
+أعطني تقريرًا منظمًا يحتوي:
+
+1. Current implementation audit:
+
+   * ما الموجود من Build 4/5/6 ويمكن إعادة استخدامه.
+   * الملفات/modules/services ذات الصلة.
+
+2. Exact Build 7 scope.
+
+3. Proposed routes/endpoints:
+
+   * فقط endpoints الضرورية.
+   * لا تضف endpoint لمجرد convenience.
+
+4. Database impact:
+
+   * tables/columns المستخدمة.
+   * تأكيد عدم الحاجة إلى migration، أو تحديد التعارض إن وجد.
+
+5. Reuse plan:
+
+   * ما الذي سيُعاد استخدامه من Guest Inspection/Towing.
+   * ما الذي يجب أن يكون registered-specific.
+
+6. Authorization/IDOR plan:
+
+   * كيف سيتحقق الخادم من ownership.
+   * ما اختبارات User A/User B المطلوبة.
+
+7. UI flow plan:
+
+   * screens/states.
+   * empty/no-match/error/success states.
+
+8. Test plan:
+
+   * unit/integration/API.
+   * browser.
+   * DB assertions.
+   * Build 4/5 regression.
+
+9. Risk list:
+
+   * أي ambiguity أو contradiction حقيقي وجدته.
+
+10. Explicit scope statement:
+
+* ما لن تلمسه.
+
+لا تنفذ شيئًا بعد هذا التقرير.
+لا تعدّل الملفات.
+لا تعمل migration.
+لا تبدأ Build.
+
+بعد أن ترسل الخطة سأراجعها قبل إعطائك أمر Build.
