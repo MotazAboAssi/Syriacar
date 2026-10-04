@@ -1,0 +1,112 @@
+We have completed Build 7, Provider Test Fixtures, manual acceptance testing, and all current changes have been pushed to GitHub.
+
+Do NOT modify any files.
+Do NOT commit or push.
+Do NOT install packages.
+
+Perform a read-only Production Security & Readiness Audit of the current Syriacar project.
+
+Review the actual current codebase, not just documentation.
+
+Focus on:
+
+1. Authentication
+- registration
+- OTP verification
+- login
+- JWT cookie/session behavior
+- inactive/deleted users
+- account deletion
+- password handling
+- Argon2id usage
+- OTP hashing/storage
+- OTP attempt limits and resend cooldown
+- token expiration/renewal
+
+2. Authorization / IDOR / BOLA
+- user_id ownership
+- vehicle ownership
+- provider_id/provider selection
+- service requests
+- notifications
+- protected API routes
+- any possibility of accessing another user's data or vehicle
+
+3. Production security
+- secrets
+- environment variables
+- accidental secret logging
+- OTP exposure
+- debug output
+- test/manual seed guards
+- provider fixture guards
+- development-only endpoints or behavior
+- production database safety
+
+4. Whapi
+- server-only token handling
+- send/retry behavior
+- callback endpoint authentication
+- callback replay/old-event handling
+- provider_message_id handling
+- whether failed delivery can incorrectly affect OTP state
+
+5. Web/API security
+- Origin validation
+- CSRF-relevant state-changing requests
+- input validation
+- malformed IDs
+- rate limiting
+- error leakage
+- SQL/ORM safety
+- transaction boundaries
+- duplicate submission behavior
+
+6. Production deployment readiness
+- required environment variables
+- missing configuration
+- assumptions that are still development-only
+- PWA/service worker issues if any
+- public routes that should remain public
+- protected routes that may be incorrectly exposed
+
+7. Test/data isolation
+- manual test accounts
+- provider fixtures
+- development seed commands
+- confirmation that production cannot execute them
+- whether any fixture data can accidentally appear in production
+
+8. Database safety
+- migrations
+- constraints
+- indexes
+- sensitive columns
+- account deletion/anonymization
+- audit log behavior
+- referential integrity
+
+IMPORTANT:
+- Do not make changes.
+- Do not "fix" anything.
+- Do not invent missing requirements.
+- For every finding classify it as:
+  CRITICAL / HIGH / MEDIUM / LOW / INFO
+- For every finding provide:
+  file/path
+  relevant code area
+  why it matters
+  recommended action
+  whether it blocks Production
+- Explicitly list "No findings" for categories that pass.
+- Distinguish confirmed findings from recommendations.
+- Do not treat missing future features as security vulnerabilities.
+
+At the end provide:
+A. Production blockers
+B. Non-blocking findings
+C. Recommended hardening
+D. Required environment variables
+E. Final readiness verdict: READY / READY AFTER FIXES / NOT READY
+
+Do not change files, commit, or push.
