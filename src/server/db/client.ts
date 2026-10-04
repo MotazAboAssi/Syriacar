@@ -3,6 +3,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool, type PoolClient } from "pg";
 import { readDatabaseConfig } from "../config/database.ts";
 import * as schema from "./schema.ts";
+import { protectPoolTransactions } from "./transaction-release.ts";
 
 function createDatabase() {
   const { connectionString } = readDatabaseConfig();
@@ -23,7 +24,7 @@ function createDatabase() {
     console.error("An idle PostgreSQL connection became unavailable.");
   });
 
-  return { pool, db: drizzle(pool, { schema }) };
+  return { pool, db: protectPoolTransactions(drizzle(pool, { schema })) };
 }
 
 type DatabaseConnection = ReturnType<typeof createDatabase>;

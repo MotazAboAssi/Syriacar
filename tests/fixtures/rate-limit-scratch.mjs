@@ -9,6 +9,7 @@ import { readDatabaseConfig } from "../../src/server/config/database.ts";
 import * as business from "../../src/server/db/schema.ts";
 import { securityRateLimits } from "../../src/server/db/security-rate-limits.ts";
 import { seedReferenceData } from "../../src/server/db/seed/seed.ts";
+import { protectPoolTransactions } from "../../src/server/db/transaction-release.ts";
 
 nextEnv.loadEnvConfig(process.cwd());
 /** Committed private schema, pool=2. Never reads/writes synthetic public rows. */
@@ -17,7 +18,7 @@ export async function withRateScratch(check) {
   const pool = new Pool({ connectionString: readDatabaseConfig().connectionString, max: 2,
     application_name: name, connectionTimeoutMillis: 5000,
     options: `-c search_path=${name},public -c timezone=UTC -c statement_timeout=5000` });
-  const db = drizzle(pool);
+  const db = protectPoolTransactions(drizzle(pool));
   const tables = [...Object.values(business).filter(t => is(t, PgTable)), securityRateLimits];
   const symbol = PgTable.Symbol.Schema, originals = tables.map(t => t[symbol]);
   let created = false;
