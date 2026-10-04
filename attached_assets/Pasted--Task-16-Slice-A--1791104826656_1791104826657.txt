@@ -1,0 +1,102 @@
+ابدأ الآن فقط بتنفيذ **Task #16 — Slice A** وفق الخطة المعتمدة أعلاه.
+
+النطاق الوحيد المسموح في هذا Build:
+
+1. Provider authentication:
+
+   * `/provider/login`
+   * `/api/provider/login`
+   * `/api/provider/logout`
+   * Provider JWT/cookie منفصل عن user account cookie/signing purpose.
+   * active providers فقط يمكنهم إنشاء session.
+   * pending وdisabled مرفوضون.
+   * كل protected provider request يعيد التحقق من provider status من DB.
+   * session لمدة 30 يومًا وفق الخطة.
+   * لا provider registration/OTP/password reset/change password.
+
+2. إعادة استخدام login rate-limit الحالية:
+
+   * `checkLogin`
+   * `failLogin`
+   * `successfulLogin`
+   * identity بصيغة `provider:<phone>`.
+   * السياسة الحالية فقط: 5 أخطاء/15 دقيقة، ثم 15 دقيقة حظر.
+   * لا تعدّل AccountLimits أو السياسة العامة أو تنشئ infrastructure جديدة.
+   * إذا تعذر reuse ضمن الحدود المحددة في الخطة، توقف وأبلغني بدل اختراع policy.
+
+3. Provider protected shell:
+
+   * عربي RTL/mobile-first.
+   * profile/reference read-only.
+   * عرض البيانات المسموح بها فقط.
+   * لا UUIDs خام، password_hash، location_url أو whatsapp_number في UI.
+   * لا تعديل profile/status/type/location/WhatsApp/password في Slice A.
+
+4. Provider notifications:
+
+   * `/api/provider/notifications`
+   * `/api/provider/notifications/[id]`
+   * `/provider/notifications`
+   * `/provider/notifications/[id]`
+   * owned notifications فقط.
+   * الأحدث أولًا.
+   * pagination مستقرة.
+   * التاريخ/الوقت، نوع الخدمة، اسم العميل، هاتفه، وسياق الطلب المتاح.
+   * Guest/Registered مدعومان من البيانات الحالية.
+   * بعد anonymization تظهر بيانات العميل غير متاحة بدل استعادتها.
+   * لا accept/reject/edit/delete/follow-up mutation.
+   * resource IDs لا تمنح ownership.
+   * لا يمكن لمزود A الوصول لإشعارات أو service_requests الخاصة بمزود B.
+
+5. Security:
+
+   * Origin/Host guard للـmutations.
+   * body كامل قبل DB/transaction وفق Fix 1.
+   * المحافظة على Fix 2 وFix 3 دون تعديل.
+   * لا Argon2/pool/timeout/security refactor.
+   * no-store حيث يلزم.
+   * لا secrets أو password hashes أو contacts حساسة في logs/localStorage.
+
+6. Testing:
+   نفّذ فقط الاختبارات الخاصة بـSlice A:
+
+   * active/pending/disabled
+   * login policy والـrole isolation
+   * cookie/signing purpose/expiry
+   * disabled بعد إصدار JWT ثم رفض أول protected request
+   * provider A/B IDOR
+   * notification ownership
+   * Guest/Registered/deleted-user null contacts
+   * stable pagination
+   * Origin/body-before-DB
+   * same-phone user/provider rate-limit isolation
+   * browser RTL/mobile behavior الأساسي
+
+7. ممنوع في هذا Build:
+
+   * Slice B availability
+   * Slice C location/capabilities/specializations
+   * Slice D edit requests
+   * Push/P-08
+   * scheduler/reset job
+   * migrations/schema changes
+   * dependency/configuration changes
+   * seed/business-account changes
+   * Operations/Super Admin
+   * Guest/Registered/matching changes
+   * أي تعديل على Fix 1/2/3
+   * commit/push/deploy
+
+إذا ظهرت ضرورة حقيقية لـschema/migration/dependency/configuration أو تعذر تحقيق أحد المتطلبات ضمن البنية الحالية، **توقف قبل التغيير وأبلغني بالدليل والسبب الدقيق**.
+
+نفّذ Slice A فقط، ثم قدم تقريرًا واضحًا يتضمن:
+
+* الملفات التي تغيرت
+* ما تم تنفيذه
+* الاختبارات والنتائج
+* typecheck/build
+* أي تغييرات schema/dependencies/configuration إن وجدت
+* أي blockers
+* وما إذا كانت Slice A جاهزة للقبول والانتقال إلى Slice B
+
+لا تبدأ Slice B تلقائيًا.
