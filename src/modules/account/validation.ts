@@ -2,6 +2,8 @@ import { isE164, isUuid } from "../guest-inspection/validation.ts";
 import type { ApiError, VehicleInput } from "./contracts.ts";
 
 export class AccountError extends Error {
+  // Internal response metadata; never part of the JSON detail.
+  cookies: string[] = [];
   status: number;
   detail: ApiError;
   constructor(status: number, error: string, extra: Omit<ApiError, "error"> = {}) {

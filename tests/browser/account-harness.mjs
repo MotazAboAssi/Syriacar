@@ -33,12 +33,22 @@ export async function accountBrowserFixture(browser, check, { width = 1280, path
             id && request.method() === "PATCH" ? req => fixture.api.editVehicle(req, id) : null);
         assert.ok(handler, "Unexpected API; live fallback is forbidden");
         const data = request.postData();
-        const response = await handler(new Request(url, { method: request.method(), headers: request.headers(),
+        const response = await handler(new Request(url, { method: request.method(), headers: await request.allHeaders(),
           ...(data === null ? {} : { body: data }) }));
         const body = await response.text();
-        const call = { path: url.pathname, method: request.method(), status: response.status, data: JSON.parse(body) };
+        const call = { path: url.pathname, method: request.method(), status: response.status, data: JSON.parse(body),
+          query: Object.fromEntries(url.searchParams) };
         calls.push(call); if (beforeResponse) await beforeResponse(call);
-        return { status: response.status, body, headers: Object.fromEntries(response.headers) };
+        // Playwright's object headers collapse multiple Set-Cookie values. Apply
+        // each server cookie separately, preserving the browser's secure jar.
+        for (const cookie of response.headers.getSetCookie()) {
+          const [pair] = cookie.split(";"), equals = pair.indexOf("=");
+          const name = pair.slice(0, equals), value = pair.slice(equals + 1);
+          if (cookie.includes("Max-Age=0")) await context.clearCookies({ name });
+          else await context.addCookies([{ name, value, url: appOrigin, httpOnly: true, secure: true, sameSite: "Lax" }]);
+        }
+        const headers = Object.fromEntries(response.headers); delete headers["set-cookie"];
+        return { status: response.status, body, headers };
       });
       queue = work.then(() => {}, error => { errors.push(error); });
       try { await route.fulfill(await work); } catch (error) {

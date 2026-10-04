@@ -1,5 +1,6 @@
 import test, { before, after } from "node:test";
 import assert from "node:assert/strict";
+import { registrationCookieName } from "../../src/modules/account/registration-flow.ts";
 import { eq } from "drizzle-orm";
 import * as s from "../../src/server/db/schema.ts";
 import { closeDatabase } from "../../src/server/db/client.ts";
@@ -10,6 +11,84 @@ let browser;
 before(async () => { browser = await launchBrowser(); });
 after(async () => { await browser?.close(); await closeDatabase(); });
 const run = (name, check, options) => test(name, () => accountBrowserFixture(browser, check, options));
+
+run("registration A page rejects B OTP without adopting B attempt", async f => {
+  const phone = await registerBrowser(f); await f.drain();
+  const attemptA = await f.page.evaluate(() => sessionStorage.getItem("syriacar.account.otpAttempt"));
+  await f.register(phone, { name: "Replacement B", password: "chosen-by-another-browser" });
+  await verifyBrowser(f, f.sends.at(-1).code);
+  await f.page.getByRole("alert").filter({ hasText: "جلسة التحقق تغيّرت" }).waitFor();
+  assert.equal((await f.user(phone)).isActive, false);
+  assert.equal((await f.challenge(phone)).attemptCount, 0);
+  assert.equal(await f.page.evaluate(() => sessionStorage.getItem("syriacar.account.otpAttempt")), attemptA);
+  assert.equal(await f.page.getByRole("button", { name: "تحقق من الرمز", exact: true }).isDisabled(), true);
+  assert.ok(!(await f.context.cookies()).some(c => c.name === "syriacar_user"));
+});
+run("multiple tabs retain separate attempt IDs even when the signed cookie is shared", async f => {
+  const phone = await registerBrowser(f); await f.drain();
+  const attemptA = await f.page.evaluate(() => sessionStorage.getItem("syriacar.account.otpAttempt"));
+  const tabB = await f.context.newPage();
+  try {
+    await tabB.goto(appOrigin + "/register");
+    await registerBrowser({ ...f, page: tabB }, phone);
+    const attemptB = await tabB.evaluate(() => sessionStorage.getItem("syriacar.account.otpAttempt"));
+    assert.notEqual(attemptB, attemptA);
+    await f.page.reload();
+    await f.page.getByRole("alert").filter({ hasText: "جلسة التحقق تغيّرت" }).waitFor();
+    assert.equal(await f.page.evaluate(() => sessionStorage.getItem("syriacar.account.otpAttempt")), attemptA);
+    assert.equal((await f.user(phone)).isActive, false);
+    // The rejected old tab must not clear the replacement cookie.
+    await verifyBrowser({ ...f, page: tabB }, f.sends.at(-1).code);
+    await tabB.waitForURL("**/account");
+    assert.equal((await f.user(phone)).isActive, true);
+  } finally { await tabB.close(); }
+});
+run("inactive login continuation obtains its proof only after password verification", async f => {
+  const phone = f.phone(); await f.register(phone);
+  await f.page.goto(appOrigin + "/login");
+  await f.page.fill("#login-phone", phone); await f.page.fill("#login-password", "incorrect-password");
+  await f.page.getByRole("button", { name: "دخول", exact: true }).click();
+  await f.page.getByRole("alert").filter({ hasText: "غير صحيحة" }).waitFor();
+  assert.ok(!(await f.context.cookies()).some(c => c.name === registrationCookieName));
+  await f.page.fill("#login-password", password);
+  await f.page.getByRole("button", { name: "دخول", exact: true }).click();
+  await f.page.getByRole("button", { name: "إكمال التحقق", exact: true }).click();
+  await f.page.waitForURL("**/otp"); await f.page.locator(".sc-time").waitFor();
+  assert.equal((await f.user(phone)).isActive, false);
+  await verifyBrowser(f); await f.page.waitForURL("**/account");
+  assert.equal((await f.user(phone)).isActive, true);
+  assert.ok(!(await f.context.cookies()).some(c => c.name === registrationCookieName));
+});
+run("missing registration cookie fails closed while retaining the page's own attempt", async f => {
+  const phone = await registerBrowser(f); await f.drain();
+  const attempt = await f.page.evaluate(() => sessionStorage.getItem("syriacar.account.otpAttempt"));
+  await f.context.clearCookies({ name: registrationCookieName });
+  await f.page.reload();
+  await f.page.getByRole("alert").filter({ hasText: "جلسة التحقق تغيّرت" }).waitFor();
+  assert.equal(await f.page.evaluate(() => sessionStorage.getItem("syriacar.account.otpAttempt")), attempt);
+  assert.equal((await f.user(phone)).isActive, false);
+});
+run("explicit resend updates its own page; another tab never adopts the replacement", async f => {
+  const phone = await registerBrowser(f); await f.drain();
+  const attempt = await f.page.evaluate(() => sessionStorage.getItem("syriacar.account.otpAttempt"));
+  const oldTab = await f.context.newPage();
+  try {
+    await oldTab.goto(appOrigin + "/register");
+    await oldTab.evaluate(({ phone, attempt }) => {
+      sessionStorage.setItem("syriacar.account.otpPhone", phone);
+      sessionStorage.setItem("syriacar.account.otpAttempt", attempt);
+    }, { phone, attempt });
+    await oldTab.goto(appOrigin + "/otp"); await oldTab.locator(".sc-time").waitFor(); await f.drain();
+    f.advance(600001); await f.page.clock.fastForward(610000);
+    const resend = f.page.getByRole("button", { name: "إعادة إرسال الرمز", exact: true });
+    await resend.waitFor(); await resend.click();
+    await f.page.waitForFunction(previous => sessionStorage.getItem("syriacar.account.otpAttempt") !== previous, attempt);
+    await oldTab.reload();
+    await oldTab.getByRole("alert").filter({ hasText: "جلسة التحقق تغيّرت" }).waitFor();
+    assert.equal(await oldTab.evaluate(() => sessionStorage.getItem("syriacar.account.otpAttempt")), attempt);
+    await verifyBrowser(f); await f.page.waitForURL("**/account");
+  } finally { await oldTab.close(); }
+});
 
 run("full Build6 happy path in real browser with actual handlers+PG and secure cookie", async f => {
   const phone = await activateBrowser(f);

@@ -27,9 +27,10 @@ async function call<T>(path: string, method = "GET", body?: unknown): Promise<T>
 export const accountApi = {
   register: (input: { name: string; phone: string; password: string }) =>
     call<OtpState>("/api/account/register", "POST", input),
-  otpState: (phone: string) => call<OtpState>("/api/account/otp?phone=" + encodeURIComponent(phone)),
-  verify: (input: { phone: string; code: string }) => call<Profile>("/api/account/otp", "POST", input),
-  resend: (phone: string) => call<OtpState>("/api/account/otp/resend", "POST", { phone }),
+  otpState: (phone: string, attemptId: string) =>
+    call<OtpState>("/api/account/otp?phone=" + encodeURIComponent(phone) + "&attemptId=" + encodeURIComponent(attemptId)),
+  verify: (input: { phone: string; code: string; attemptId: string }) => call<Profile>("/api/account/otp", "POST", input),
+  resend: (phone: string, attemptId: string) => call<OtpState>("/api/account/otp/resend", "POST", { phone, attemptId }),
   login: (input: { phone: string; password: string }) => call<Profile>("/api/account/login", "POST", input),
   logout: () => call<{ ok: true }>("/api/account/logout", "POST", {}),
   profile: () => call<Profile>("/api/account/profile"),

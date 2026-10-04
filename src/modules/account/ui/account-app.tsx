@@ -10,6 +10,7 @@ import "./account.css";
 
 type ScreenProps = { profile?: Profile };
 const phoneKey = "syriacar.account.otpPhone";
+const attemptKey = "syriacar.account.otpAttempt";
 const otpErrorKey = "syriacar.account.otpError";
 const sessionError = "انتهت جلستك. الرجاء تسجيل الدخول مجدداً.";
 const genericError = "حدث خطأ. حاول مجدداً.";
@@ -28,8 +29,12 @@ function errorMessage(error: unknown, fallback = genericError): string {
   if (error instanceof AccountApiError) return error.detail.error || fallback;
   return fallback;
 }
-function goOtp(router: ReturnType<typeof useRouter>, phone: string) {
-  sessionStorage.setItem(phoneKey, phone);
+function saveOtpAttempt(state: OtpState) {
+  sessionStorage.setItem(phoneKey, state.phone);
+  sessionStorage.setItem(attemptKey, state.attemptId);
+}
+function goOtp(router: ReturnType<typeof useRouter>, state: OtpState) {
+  saveOtpAttempt(state);
   router.push("/otp");
 }
 function BrandHeader({ context, profile }: { context: string; profile?: Profile }) {
@@ -102,10 +107,10 @@ function RegisterPage() {
     if (!phone) { setFieldErrors({phone:"أدخل رقمًا سوريًا يبدأ بـ +963."}); return; }
     if ([...password].length < 8) { setFieldErrors({password:"يجب ألا تقل كلمة المرور عن 8 أحرف."}); return; }
     setBusy(true);
-    try { const state = await accountApi.register({name:name.trim(), phone, password}); sessionStorage.setItem(phoneKey, state.phone || phone); router.push("/otp"); }
+    try { const state = await accountApi.register({name:name.trim(), phone, password}); goOtp(router,state); }
     catch (reason) {
       if (reason instanceof AccountApiError && reason.status === 500 && reason.detail.otp) {
-        sessionStorage.setItem(phoneKey, reason.detail.otp.phone || phone);
+        saveOtpAttempt(reason.detail.otp);
         sessionStorage.setItem(otpErrorKey, genericError);
         router.push("/otp"); return;
       }
@@ -125,15 +130,15 @@ function RegisterPage() {
 }
 function LoginPage() {
   const router = useRouter();
-  const [phoneInput,setPhoneInput]=useState(""); const [password,setPassword]=useState(""); const [error,setError]=useState(""); const [busy,setBusy]=useState(false); const [inactivePhone,setInactivePhone]=useState("");
+  const [phoneInput,setPhoneInput]=useState(""); const [password,setPassword]=useState(""); const [error,setError]=useState(""); const [busy,setBusy]=useState(false); const [inactiveState,setInactiveState]=useState<OtpState|null>(null);
   useEffect(()=>{ const message=sessionStorage.getItem("syriacar.account.sessionError"); if(message){setError(message);sessionStorage.removeItem("syriacar.account.sessionError");} },[]);
   async function submit(event:React.FormEvent<HTMLFormElement>) {
-    event.preventDefault(); setError(""); setInactivePhone("");
+    event.preventDefault(); setError(""); setInactiveState(null);
     const phone=normalizePhone(phoneInput); if(!phone){setError("أدخل رقمًا سوريًا يبدأ بـ +963.");return;}
     setBusy(true);
     try { await accountApi.login({phone,password}); router.replace("/account"); }
     catch(reason) {
-      if(reason instanceof AccountApiError && reason.detail.code==="inactive") { setError("لم يكتمل تفعيل حسابك بعد.");setInactivePhone(phone);sessionStorage.setItem(phoneKey,phone); }
+      if(reason instanceof AccountApiError && reason.detail.code==="inactive") { setError("لم يكتمل تفعيل حسابك بعد.");setInactiveState(reason.detail.otp??null); }
       else setError(errorMessage(reason));
     } finally {setBusy(false);}
   }
@@ -143,25 +148,33 @@ function LoginPage() {
       <Field label="رقم الهاتف" id="login-phone"><TextInput id="login-phone" className="sc-ltr" dir="ltr" inputMode="tel" autoComplete="tel" placeholder="+963 9XX XXX XXX" value={phoneInput} onChange={e=>setPhoneInput(e.target.value)} required/></Field>
       <Field label="كلمة المرور" id="login-password"><TextInput id="login-password" type="password" autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)} required/></Field>
       <button className="sc-btn" type="submit" disabled={busy}>{busy ? "جارٍ تسجيل الدخول…" : "دخول"}</button>
-      {inactivePhone && <button className="sc-btn secondary" type="button" onClick={()=>goOtp(router,inactivePhone)}>إكمال التحقق</button>}
+      {inactiveState && <button className="sc-btn secondary" type="button" onClick={()=>goOtp(router,inactiveState)}>إكمال التحقق</button>}
     </form><p className="sc-auth-switch">ليس لديك حساب؟ <Link href="/register">إنشاء حساب</Link></p>
   </AuthLayout>;
 }
 function OtpPage() {
   const router=useRouter(); const [phone,setPhone]=useState(""); const [digits,setDigits]=useState(Array(6).fill("")); const [state,setState]=useState<OtpState|null>(null);
+  const [attemptId,setAttemptId]=useState(""); const [flowInvalid,setFlowInvalid]=useState(false);
   const [error,setError]=useState(""); const [busy,setBusy]=useState(false); const [now,setNow]=useState(Date.now()); const refs=useRef<Array<HTMLInputElement|null>>([]); const refreshedExpiry=useRef("");
-  const refresh=useCallback(async (target:string, quiet=false) => {
-    try { const latest=await accountApi.otpState(target);setState(latest);if(!quiet)setError(""); }
-    catch(reason){ if(!quiet)setError(errorMessage(reason)); }
+  const refresh=useCallback(async (target:string, attempt:string, quiet=false) => {
+    try {
+      const current=await accountApi.otpState(target,attempt);
+      if(current.attemptId!==attempt){setFlowInvalid(true);setError("جلسة التحقق تغيّرت أو انتهت. ابدأ التسجيل مجددًا.");return;}
+      setState(current);if(!quiet)setError("");
+    }
+    catch(reason){
+      if(reason instanceof AccountApiError&&reason.detail.code==="otp_flow_invalid"){setFlowInvalid(true);setError(errorMessage(reason));}
+      else if(!quiet)setError(errorMessage(reason));
+    }
   },[]);
-  useEffect(()=>{ const stored=sessionStorage.getItem(phoneKey); if(!stored){router.replace("/register");return;}setPhone(stored);const pendingError=sessionStorage.getItem(otpErrorKey);if(pendingError){setError(pendingError);sessionStorage.removeItem(otpErrorKey);}void refresh(stored,true); },[refresh,router]);
+  useEffect(()=>{ const stored=sessionStorage.getItem(phoneKey),attempt=sessionStorage.getItem(attemptKey); if(!stored||!attempt){router.replace("/register");return;}setPhone(stored);setAttemptId(attempt);const pendingError=sessionStorage.getItem(otpErrorKey);if(pendingError){setError(pendingError);sessionStorage.removeItem(otpErrorKey);}void refresh(stored,attempt,true); },[refresh,router]);
   useEffect(()=>{ const ticker=window.setInterval(()=>setNow(Date.now()),1000);return()=>window.clearInterval(ticker); },[]);
-  useEffect(()=>{ if(!phone)return;const poll=window.setInterval(()=>void refresh(phone,true),15000);return()=>window.clearInterval(poll); },[phone,refresh]);
+  useEffect(()=>{ if(!phone||!attemptId||flowInvalid)return;const poll=window.setInterval(()=>void refresh(phone,attemptId,true),15000);return()=>window.clearInterval(poll); },[phone,attemptId,flowInvalid,refresh]);
   const expires=state ? new Date(state.expiresAt).getTime() : 0;
   const remaining=Math.max(0,Math.ceil((expires-now)/1000));
   const resendAt=state ? new Date(state.resendAt).getTime() : 0;
-  const canResend=!!state && state.canResend && (remaining===0 || expires<=now) && now>=resendAt;
-  useEffect(()=>{if(state&&remaining===0&&refreshedExpiry.current!==state.expiresAt){refreshedExpiry.current=state.expiresAt;void refresh(phone,true);}},[remaining,state,phone,refresh]);
+  const canResend=!flowInvalid && !!state && state.canResend && (remaining===0 || expires<=now) && now>=resendAt;
+  useEffect(()=>{if(!flowInvalid&&state&&remaining===0&&refreshedExpiry.current!==state.expiresAt){refreshedExpiry.current=state.expiresAt;void refresh(phone,attemptId,true);}},[remaining,state,phone,attemptId,flowInvalid,refresh]);
   const sendStatus=state?.sendStatus;
   const deliveryStatus=state?.deliveryStatus?.toLowerCase();
   const deliveryConfirmed=deliveryStatus==="delivered"||deliveryStatus==="read";
@@ -177,16 +190,23 @@ function OtpPage() {
     if(digit&&index<5)refs.current[index+1]?.focus();
   }
   async function verify(event:React.FormEvent<HTMLFormElement>) {
-    event.preventDefault(); const code=digits.join("");if(code.length!==6){setError("أدخل رمز التحقق المؤلف من ستة أرقام.");return;}
+    event.preventDefault();if(flowInvalid||busy)return; const code=digits.join("");if(code.length!==6){setError("أدخل رمز التحقق المؤلف من ستة أرقام.");return;}
     setBusy(true);setError("");
-    try { await accountApi.verify({phone,code});sessionStorage.removeItem(phoneKey);router.replace("/account"); }
-    catch(reason){setError(reason instanceof AccountApiError && reason.detail.code==="otp_invalid" ? "الرمز غير صحيح أو لم يعد صالحًا. اطلب رمزًا جديدًا." : errorMessage(reason));if(reason instanceof AccountApiError && reason.detail.otp)setState(reason.detail.otp);else void refresh(phone,true);setDigits(Array(6).fill(""));refs.current[0]?.focus();}
+    try { await accountApi.verify({phone,code,attemptId});sessionStorage.removeItem(phoneKey);sessionStorage.removeItem(attemptKey);router.replace("/account"); }
+    catch(reason){setError(reason instanceof AccountApiError && reason.detail.code==="otp_invalid" ? "الرمز غير صحيح أو لم يعد صالحًا. اطلب رمزًا جديدًا." : errorMessage(reason));if(reason instanceof AccountApiError&&reason.detail.code==="otp_flow_invalid")setFlowInvalid(true);else void refresh(phone,attemptId,true);setDigits(Array(6).fill(""));refs.current[0]?.focus();}
     finally{setBusy(false);}
   }
   async function resend() {
     if(!canResend||busy)return;setBusy(true);setError("");setDigits(Array(6).fill(""));
-    try{const next=await accountApi.resend(phone);setState(next);}
-    catch(reason){setError(reason instanceof AccountApiError&&reason.status===500?genericError:errorMessage(reason));if(reason instanceof AccountApiError && reason.detail.otp)setState(reason.detail.otp);else void refresh(phone,true);}
+    try{const next=await accountApi.resend(phone,attemptId);saveOtpAttempt(next);setAttemptId(next.attemptId);setState(next);}
+    catch(reason){
+      setError(reason instanceof AccountApiError&&reason.status===500?genericError:errorMessage(reason));
+      if(reason instanceof AccountApiError&&reason.detail.code==="otp_flow_invalid")setFlowInvalid(true);
+      else if(reason instanceof AccountApiError&&reason.status===500&&reason.detail.otp){
+        // Only this explicit resend may adopt its replacement, even on send failure.
+        saveOtpAttempt(reason.detail.otp);setAttemptId(reason.detail.otp.attemptId);setState(reason.detail.otp);
+      }else void refresh(phone,attemptId,true);
+    }
     finally{setBusy(false);}
   }
   const mm=String(Math.floor(remaining/60)).padStart(2,"0"),ss=String(remaining%60).padStart(2,"0");
@@ -195,13 +215,14 @@ function OtpPage() {
       <p className="sc-help">رقم الهاتف: <b className="sc-ltr" style={{display:"inline-block"}}>{phone}</b></p>
       {sendCopy&&<p className={`sc-alert${deliveryConfirmed||(sendStatus==="api_accepted"&&!deliveryFailed)?" success":""}`} role="status" style={{marginTop:14}}>{sendCopy}</p>}
       {error&&<p className="sc-alert" role="alert" style={{marginTop:14}}>{error}</p>}
-      {!state&&<button className="sc-btn secondary" type="button" onClick={()=>void refresh(phone)} disabled={!phone}>إعادة تحميل حالة التحقق</button>}
+      {flowInvalid&&<Link className="sc-btn secondary" href="/register">بدء التسجيل مجددًا</Link>}
+      {!state&&!flowInvalid&&<button className="sc-btn secondary" type="button" onClick={()=>void refresh(phone,attemptId)} disabled={!phone||!attemptId}>إعادة تحميل حالة التحقق</button>}
       <form className="sc-form" onSubmit={verify} style={{marginTop:18}}>
         <div className="sc-otp-boxes" role="group" aria-label="رمز التحقق المكوّن من ستة أرقام">
           {digits.map((digit,index)=><input key={index} ref={el=>{refs.current[index]=el;}} className="sc-otp-digit" type="text" inputMode="numeric" pattern="[0-9]*" autoComplete={index===0?"one-time-code":"off"} aria-label={`الخانة ${index+1}`} value={digit} onChange={e=>changeDigit(index,e.target.value)} onKeyDown={e=>{if(e.key==="Backspace"&&!digits[index]&&index>0)refs.current[index-1]?.focus();}}/> )}
         </div>
         <div className="sc-inline"><span className="sc-help">الوقت المتبقي</span><span className="sc-time" aria-live="off">{remaining?`${mm}:${ss}`:"انتهت الصلاحية"}</span></div>
-        <button className="sc-btn" type="submit" disabled={busy||digits.join("").length!==6}>{busy?"جارٍ التحقق…":"تحقق من الرمز"}</button>
+        <button className="sc-btn" type="submit" disabled={flowInvalid||busy||!attemptId||digits.join("").length!==6}>{busy?"جارٍ التحقق…":"تحقق من الرمز"}</button>
       </form>
       <hr className="sc-rule"/>
       <div className="sc-inline"><p className="sc-help">لم يصلك الرمز؟</p><button className="sc-btn secondary" type="button" onClick={()=>void resend()} disabled={!canResend||busy}>{busy?"جارٍ الإرسال…":"إعادة إرسال الرمز"}</button></div>

@@ -50,7 +50,7 @@ run("confirmed current delivery corrects unknown aggregate without overwriting A
 });
 run("failed delivery retries fresh code, preserves verification attempts, old-attempt callbacks cannot change current", async f => {
   const p = f.phone(); await f.register(p);
-  await f.api.verify(req("otp", "POST", { phone: p, code: "000000" }));
+  await f.api.verify(f.flowReq("otp", "POST", { phone: p, code: "000000" }));
   f.advance(1000); assert.equal((await callback(f, "mock-1", "failed")).status, 200);
   let row = await f.challenge(p);
   assert.equal(row.attemptCount, 1); assert.equal(row.sendAttemptCount, 2); assert.equal(row.retryAt, null);
@@ -77,13 +77,13 @@ run("hourly limit includes automatic retry and never exceeds five actual sends",
   const p = f.phone();
   f.plans.push(outcome("failed"), outcome("failed")); await f.register(p);
   f.advance(600001);
-  f.plans.push(outcome("failed"), outcome("failed")); await f.api.resend(req("otp/resend", "POST", { phone: p }));
+  f.plans.push(outcome("failed"), outcome("failed")); await f.api.resend(f.flowReq("otp/resend", "POST", { phone: p }));
   f.advance(600001);
   f.plans.push(outcome("failed"));
-  const fifth = await parsed(await f.api.resend(req("otp/resend", "POST", { phone: p })));
+  const fifth = await parsed(await f.api.resend(f.flowReq("otp/resend", "POST", { phone: p })));
   assert.equal(fifth.status, 500); assert.equal(f.sends.length, 5);
   assert.equal((await f.challenge(p)).sendAttemptCount, 2);
   assert.equal((await f.challenge(p)).sendAttempts[1].error_code, "rate_limited");
   f.advance(600001);
-  assert.equal((await f.api.resend(req("otp/resend", "POST", { phone: p }))).status, 429);
+  assert.equal((await f.api.resend(f.flowReq("otp/resend", "POST", { phone: p }))).status, 429);
 });

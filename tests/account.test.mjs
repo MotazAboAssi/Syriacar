@@ -33,7 +33,7 @@ run("registration stores inactive user, Argon2 and HMAC only; activation atomic,
   assert.equal((await f.user(p)).isActive, true);
   assert.ok((await f.challenge(p)).consumedAt);
   assert.deepEqual(Object.keys(a.data).sort(), ["homeGovernorateId", "name", "phone"]);
-  assert.equal((await parsed(await f.api.verify(req("otp", "POST", { phone: p, code: f.sends[0].code })))).status, 422);
+  assert.equal((await parsed(await f.api.verify(f.flowReq("otp", "POST", { phone: p, code: f.sends[0].code })))).status, 422);
   assert.equal((await parsed(await f.api.profile(req("profile", "GET", undefined, a.cookie)))).status, 200);
 });
 run("registration rejects non-Syrian, short password, unknown fields and blank names", async f => {
@@ -50,7 +50,7 @@ run("inactive re-registration reuses user and expires old code; active duplicate
   assert.equal((await f.user(p)).name, "اسم جديد");
   const [old] = await f.tx.select().from(s.otpVerificationChallenges).where(eq(s.otpVerificationChallenges.id, first.id));
   assert.equal(old.consumedAt, null); assert.ok(old.expiresAt <= f.now());
-  assert.equal((await parsed(await f.api.verify(req("otp", "POST", { phone: p, code: oldCode })))).status, 422);
+  assert.equal((await parsed(await f.api.verify(f.flowReq("otp", "POST", { phone: p, code: oldCode })))).status, 422);
   await f.activate(p);
   const duplicate = await f.register(p);
   assert.equal(duplicate.status, 409); assert.equal(duplicate.data.error, "الرقم مسجَّل مسبقاً.");
@@ -58,14 +58,14 @@ run("inactive re-registration reuses user and expires old code; active duplicate
 run("five incorrect OTP attempts persist, invalidate by expiry not consumption, early resend429", async f => {
   const p = f.phone(); await f.register(p);
   for (let i = 1; i <= 5; i++) {
-    const result = await parsed(await f.api.verify(req("otp", "POST", { phone: p, code: i === 1 ? "bad" : "000000" })));
+    const result = await parsed(await f.api.verify(f.flowReq("otp", "POST", { phone: p, code: i === 1 ? "bad" : "000000" })));
     assert.equal(result.status, 422); assert.equal((await f.challenge(p)).attemptCount, i);
   }
   const row = await f.challenge(p); assert.ok(row.expiresAt <= f.now()); assert.equal(row.consumedAt, null);
-  const early = await parsed(await f.api.resend(req("otp/resend", "POST", { phone: p })));
+  const early = await parsed(await f.api.resend(f.flowReq("otp/resend", "POST", { phone: p })));
   assert.equal(early.status, 429); assert.equal(early.data.error, "يرجى الانتظار دقيقتين قبل إعادة الإرسال.");
   f.advance(120000);
-  assert.equal((await parsed(await f.api.resend(req("otp/resend", "POST", { phone: p })))).status, 200);
+  assert.equal((await parsed(await f.api.resend(f.flowReq("otp/resend", "POST", { phone: p })))).status, 200);
   assert.equal((await f.challenge(p)).attemptCount, 0);
   assert.equal((await f.challenge(p)).sendAttemptCount, 1);
   const rows = await f.tx.select().from(s.otpVerificationChallenges).where(eq(s.otpVerificationChallenges.phone, p));
@@ -74,11 +74,11 @@ run("five incorrect OTP attempts persist, invalidate by expiry not consumption, 
 run("resend requires expiration/invalidation AND cooldown; expired OTP cannot activate", async f => {
   const p = f.phone(); await f.register(p);
   f.advance(120001);
-  assert.equal((await parsed(await f.api.resend(req("otp/resend", "POST", { phone: p })))).status, 422);
+  assert.equal((await parsed(await f.api.resend(f.flowReq("otp/resend", "POST", { phone: p })))).status, 422);
   f.advance(480000);
   assert.equal((await f.activate(p)).status, 422);
-  assert.equal((await parsed(await f.api.otpState(req("otp?phone=" + encodeURIComponent(p))))).data.canResend, true);
-  assert.equal((await parsed(await f.api.resend(req("otp/resend", "POST", { phone: p })))).status, 200);
+  assert.equal((await parsed(await f.api.otpState(f.flowReq("otp?phone=" + encodeURIComponent(p))))).data.canResend, true);
+  assert.equal((await parsed(await f.api.resend(f.flowReq("otp/resend", "POST", { phone: p })))).status, 200);
 });
 run("first failed send retries after5s with fresh code/hash and expiry; no third attempt", async f => {
   const p = f.phone(); f.plans.push(outcome("failed"), outcome());
@@ -89,7 +89,7 @@ run("first failed send retries after5s with fresh code/hash and expiry; no third
   assert.equal(row.sendAttemptCount, 2); assert.equal(row.retryAt, null); assert.equal(row.sendStatus, "api_accepted");
   assert.equal(row.deliveryStatus, null); assert.equal(row.expiresAt - row.lastSentAt, 600000);
   await sendChallenge(f.tx, row.id, f.runtime, f.limits); assert.equal(f.sends.length, 2);
-  assert.equal((await parsed(await f.api.verify(req("otp", "POST", { phone: p, code: f.sends[0].code })))).status, 422);
+  assert.equal((await parsed(await f.api.verify(f.flowReq("otp", "POST", { phone: p, code: f.sends[0].code })))).status, 422);
   assert.equal((await f.activate(p)).status, 200);
 });
 for (const kind of ["failed", "unknown"]) run(`two ${kind} sends produce generic500 and revised pending criterion`, async f => {

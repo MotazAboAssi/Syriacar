@@ -9,6 +9,7 @@ import { AccountLimits, getAccountLimits } from "./rate-limits.ts";
 import * as account from "./service.ts";
 import { listVehicles, references, writeVehicle } from "./vehicles.ts";
 import { statusCallback } from "./callback.ts";
+import { readRegistrationProof, clearRegistrationCookie } from "./registration-flow.ts";
 
 const headers = { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" };
 function sameOrigin(request: Request) {
@@ -50,14 +51,23 @@ async function body(request: Request) {
 }
 export function accountHandlers(connection: () => Connection = getDatabase, runtime: AccountRuntime = {},
   limits: AccountLimits = getAccountLimits()) {
-  const response = async (action: () => Promise<{ data: unknown; cookie?: string }>, status = 200) => {
+  const responseHeaders = (cookies: string[] = []) => {
+    const result = new Headers(headers);
+    for (const cookie of cookies) result.append("Set-Cookie", cookie);
+    return result;
+  };
+  const response = async (action: () => Promise<{ data: unknown; cookie?: string; cookies?: string[] }>, status = 200) => {
     try {
       const result = await action();
-      return Response.json(result.data, { status, headers: { ...headers, ...(result.cookie ? { "Set-Cookie": result.cookie } : {}) } });
+      return Response.json(result.data, { status, headers: responseHeaders([
+        ...(result.cookie ? [result.cookie] : []), ...(result.cookies ?? []),
+      ]) });
     } catch (error) {
       if (error instanceof AccountError) {
         return Response.json(error.detail, {
-          status: error.status, headers: { ...headers, ...(error.status === 401 ? { "Set-Cookie": clearCookie } : {}) },
+          status: error.status, headers: responseHeaders([
+            ...(error.status === 401 ? [clearCookie] : []), ...error.cookies,
+          ]),
         });
       }
       // Never log submitted passwords, codes, JWTs, Whapi tokens/payloads or raw errors.
@@ -85,18 +95,24 @@ export function accountHandlers(connection: () => Connection = getDatabase, runt
   return {
     register: (request: Request) => response(async () => {
       sameOrigin(request);
-      return { data: await account.register(await body(request), ip(request), connection(), runtime, limits) };
+      const result = await account.register(await body(request), ip(request), connection(), runtime, limits);
+      return { data: result.state, cookie: result.cookie };
     }, 201),
-    otpState: (request: Request) => response(async () => ({
-      data: await account.getOtpState(new URL(request.url).searchParams.get("phone"), connection(), runtime),
-    })),
+    otpState: (request: Request) => response(async () => {
+      const query = new URL(request.url).searchParams;
+      return { data: await account.getOtpState(query.get("phone"), query.get("attemptId"),
+        await readRegistrationProof(request, runtime), connection(), runtime) };
+    }),
     verify: (request: Request) => response(async () => {
       sameOrigin(request);
-      return authResponse(await account.verifyOtp(await body(request), connection(), runtime));
+      return { ...await authResponse(await account.verifyOtp(await body(request), connection(), runtime,
+        await readRegistrationProof(request, runtime))), cookies: [clearRegistrationCookie] };
     }),
     resend: (request: Request) => response(async () => {
       sameOrigin(request);
-      return { data: await account.resend(await body(request), connection(), runtime, limits) };
+      const result = await account.resend(await body(request), connection(), runtime, limits,
+        await readRegistrationProof(request, runtime));
+      return { data: result.state, cookie: result.cookie };
     }),
     login: (request: Request) => response(async () => {
       sameOrigin(request);

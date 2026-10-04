@@ -20,6 +20,7 @@ function key(runtime: AccountRuntime, purpose: string) {
   if (!secret) throw new Error("Account signing secret is not configured");
   return createHmac("sha256", secret).update(`syriacar:account:${purpose}`).digest();
 }
+export const registrationKey = (runtime: AccountRuntime) => key(runtime, "registration-flow");
 export function newCode(runtime: AccountRuntime) {
   const value = runtime.code?.() ?? randomInt(0, 1_000_000).toString().padStart(6, "0");
   if (!/^\d{6}$/.test(value)) throw new Error("Invalid OTP generator");

@@ -26,6 +26,7 @@ export async function latestChallenge(db: Connection, phone: string, lock = fals
 export function otpState(row: Challenge, time: Date): OtpState {
   const resendAt = new Date(row.lastSentAt.getTime() + resendCooldown);
   return {
+    attemptId: row.id,
     phone: row.phone, expiresAt: row.expiresAt.toISOString(), resendAt: resendAt.toISOString(),
     canResend: row.consumedAt === null && row.expiresAt <= time && resendAt <= time,
     sendStatus: row.sendStatus, deliveryStatus: row.deliveryStatus,
@@ -34,6 +35,9 @@ export function otpState(row: Challenge, time: Date): OtpState {
 export async function createChallenge(db: Connection, phone: string, runtime: AccountRuntime, limits: AccountLimits) {
   const time = now(runtime);
   limits.send(phone, time.getTime());
+  // Called under phoneLock: keep "latest" deterministic even within one clock tick.
+  const previous = await latestChallenge(db, phone, true);
+  const createdAt = new Date(Math.max(time.getTime(), previous ? previous.createdAt.getTime() + 1 : 0));
   // Lazy invalidation never impersonates successful verification/consumption.
   await db.update(s.otpVerificationChallenges).set({ expiresAt: time, retryAt: null })
     .where(and(eq(s.otpVerificationChallenges.phone, phone),
@@ -42,7 +46,7 @@ export async function createChallenge(db: Connection, phone: string, runtime: Ac
   const [row] = await db.insert(s.otpVerificationChallenges).values({
     id, phone, purpose: "registration", codeHash: codeHash(newCode(runtime), id, runtime),
     expiresAt: new Date(time.getTime() + otpLifetime), consumedAt: null,
-    attemptCount: 0, maxAttempts: 5, createdAt: time, lastSentAt: time,
+    attemptCount: 0, maxAttempts: 5, createdAt, lastSentAt: time,
     sendAttemptCount: 0, sendStatus: "pending", sendAttempts: [],
   }).returning();
   return row;

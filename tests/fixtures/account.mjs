@@ -7,6 +7,7 @@ import { AccountLimits } from "../../src/modules/account/rate-limits.ts";
 import { getDatabase } from "../../src/server/db/client.ts";
 import * as s from "../../src/server/db/schema.ts";
 import { codeHash } from "../../src/modules/account/security.ts";
+import { registrationCookieName } from "../../src/modules/account/registration-flow.ts";
 
 nextEnv.loadEnvConfig(process.cwd());
 export const origin = "https://account-verification.example";
@@ -26,7 +27,7 @@ export function req(path, method = "GET", input, cookie, extras = {}) {
   });
 }
 export async function parsed(response) {
-  return { status: response.status, data: await response.json(), cookie: response.headers.get("set-cookie")?.split(";")[0], headers: response.headers };
+  return { status: response.status, data: await response.json(), cookie: response.headers.getSetCookie()[0]?.split(";")[0], headers: response.headers };
 }
 /** Actual PG + actual handlers; all changes roll back. Codes exist only in the mock's RAM. */
 export async function withAccountFixture(check) {
@@ -46,8 +47,26 @@ export async function withAccountFixture(check) {
       },
     };
     const api = accountHandlers(() => tx, runtime, limits);
+    const flows = new Map();
+    for (const name of ["register", "resend", "login"]) {
+      const handler = api[name];
+      api[name] = async request => {
+        const response = await handler(request), data = await response.clone().json();
+        const state = data.otp ?? data;
+        const cookie = response.headers.getSetCookie().find(value => value.startsWith(registrationCookieName + "="));
+        if (cookie && state.attemptId) flows.set(state.phone, { attemptId: state.attemptId, cookie: cookie.split(";")[0] });
+        return response;
+      };
+    }
     const f = {
       ...fixture, api, runtime, limits, sends, plans, sleeps,
+      flows,
+      flowReq: (path, method = "GET", input) => {
+        const number = input?.phone ?? new URL(origin + "/" + path).searchParams.get("phone");
+        const flow = flows.get(number);
+        return req(method === "GET" ? path + "&attemptId=" + encodeURIComponent(flow?.attemptId ?? "") : path,
+          method, input ? { ...input, attemptId: flow?.attemptId } : undefined, flow?.cookie);
+      },
       phone: () => "+963" + nextPhone++, now: runtime.now,
       advance: (ms) => { time = new Date(time.getTime() + ms); },
       challenge: async (phone) => (await tx.select().from(s.otpVerificationChallenges)
@@ -57,7 +76,7 @@ export async function withAccountFixture(check) {
         const result = await parsed(await api.register(req("register", "POST", { name: "مالك تحقق", phone, password, ...extra })));
         time = new Date(time.getTime() + 1); return result;
       },
-      activate: async (phone) => parsed(await api.verify(req("otp", "POST", { phone, code: sends.at(-1).code }))),
+      activate: async (phone) => parsed(await api.verify(f.flowReq("otp", "POST", { phone, code: sends.at(-1).code }))),
       vehicleInput: { brandGroupId: fixture.group.id, brandId: fixture.brand.id, year: 2005, fuelTypeId: fixture.fuel.id,
         vehicleCategory: "car", plateNumber: "TEST-ONLY", color: "لون تحقق", notes: "علامة تحقق" },
       replaceCode: async (phone, code) => {

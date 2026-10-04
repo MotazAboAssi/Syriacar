@@ -1,10 +1,11 @@
 export interface ApiError {
   error: string;
   fields?: Record<string, string>;
-  code?: "inactive" | "otp_invalid";
+  code?: "inactive" | "otp_invalid" | "otp_flow_invalid";
   otp?: OtpState;
 }
 export interface OtpState {
+  attemptId: string;
   phone: string;
   expiresAt: string;
   resendAt: string;

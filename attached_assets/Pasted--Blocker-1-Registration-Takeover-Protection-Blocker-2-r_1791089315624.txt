@@ -1,0 +1,70 @@
+نفّذ Blocker 1 فقط: Registration Takeover Protection.
+
+مهم جدًا:
+- لا تبدأ Blocker 2.
+- لا تنشئ rate-limit migration.
+- لا تعدّل rate-limits.ts.
+- لا تضف IP resolver.
+- لا تستخدم X-Forwarded-For أو X-Real-IP لأي قرار أمني جديد.
+- لا تنفذ Blocker 3.
+- لا تغيّر Guest flows.
+- لا تضف features أخرى.
+- لا تعمل commit أو push؛ أنا سأقوم بالـpush يدويًا من Git pane.
+
+المطلوب تنفيذ التصميم الذي تمت مراجعته:
+
+1. إضافة registration-flow proof قصير العمر وموقّع باستخدام jose الموجود بالفعل.
+2. proof مرتبطة بمحاولة registration/challenge محددة.
+3. HttpOnly + Secure + SameSite=Lax + بدون Domain.
+4. لا تحتوي proof على OTP أو password أو password hash أو بيانات شخصية خام.
+5. صفحة OTP تحتفظ بمعرف محاولتها ولا تتبنى أحدث محاولة للهاتف تلقائيًا.
+6. verify يجب أن يثبت تطابق:
+   - page attempt ID
+   - proof challenge/attempt
+   - phone
+   - registration-data fingerprint
+   - challenge state/expiry
+   - OTP
+7. التفعيل واستهلاك challenge يجب أن يكونا ذريين وتحت نفس الحماية الحالية من concurrent registration/verification.
+8. السيناريو A/B التالي يجب أن يفشل بأمان:
+   - A يبدأ registration.
+   - B يعيد registration لنفس الهاتف.
+   - OTP الخاص بـB يصل.
+   - صفحة A ترسل OTP الخاص بـB.
+   - لا يتم تفعيل بيانات B أو أي بيانات غير مرتبطة بمحاولة A من طلب A.
+9. resend يجب ألا يجعل صفحة قديمة تتبنى محاولة جديدة تلقائيًا.
+10. inactive login:
+    - لا تصدر registration proof اعتمادًا على الهاتف فقط.
+    - إصدار proof للاستكمال يكون بعد التحقق الصحيح من كلمة المرور الحالية.
+11. proof ليست authentication ولا session ولا بديلًا عن OTP.
+12. فشل Whapi لا يؤدي إلى activation أو login.
+13. لا تغيّر schema.
+14. لا تغيّر JWT/session behavior إلا بالقدر الضروري للفصل بين registration flow وlogin flow.
+15. حافظ على UX الحالية قدر الإمكان؛ لا تضف حقولًا مرئية جديدة.
+
+الاختبارات الإلزامية:
+- A/B takeover.
+- valid A OTP + valid A proof => activation A فقط.
+- wrong proof.
+- missing proof.
+- expired/tampered proof.
+- mismatched attempt ID.
+- mismatched phone.
+- mismatched registration fingerprint.
+- old attempt after re-registration.
+- resend ثم استخدام الصفحة القديمة.
+- inactive login ثم continue verification.
+- multiple tabs.
+- concurrent verification: نجاح واحد فقط.
+- regression لجميع اختبارات account الحالية.
+- browser tests الخاصة بالتسجيل وOTP.
+
+بعد التنفيذ:
+شغّل الاختبارات المناسبة + browser tests + typecheck + production build.
+
+في النهاية أعطني:
+- الملفات التي تغيرت.
+- ما الذي تغير أمنيًا.
+- نتائج الاختبارات.
+- أي regression أو limitation.
+- لا تنتقل إلى Blocker 2.
