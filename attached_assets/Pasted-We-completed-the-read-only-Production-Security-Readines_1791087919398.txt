@@ -1,0 +1,84 @@
+We completed the read-only Production Security & Readiness Audit.
+
+The audit found exactly THREE confirmed HIGH production blockers.
+
+Do NOT implement anything yet.
+Do NOT modify files.
+Do NOT commit or push.
+
+Create a precise implementation plan ONLY for these three blockers:
+
+BLOCKER 1 — Registration takeover / incomplete-account replacement
+Current issue:
+An unactivated account can be re-registered by phone, replacing its name/password hash and creating a new OTP challenge. OTP verification is tied to the latest phone challenge, not strongly to the specific registration attempt and credentials.
+
+Goal:
+Ensure an attacker who knows a phone number cannot replace the pending registration credentials and have the legitimate user accidentally activate the attacker's chosen password.
+
+Design requirements:
+- Preserve the existing legitimate registration/OTP UX as much as possible.
+- Do not expose whether a phone belongs to a registered or pending account beyond the existing intended messages.
+- OTP must remain hash-only.
+- Do not weaken OTP attempt limits/cooldown.
+- Do not add unnecessary schema unless genuinely required.
+- Prefer the smallest secure design.
+- Explain exactly how an existing pending registration is handled.
+- Explain what happens when the legitimate user starts registration again.
+- Explain how verification proves that the OTP belongs to the registration attempt being activated.
+
+BLOCKER 2 — Persistent/shared rate limiting
+Current issue:
+Rate limits are stored in an in-memory Map in one Node process, so restarts and multiple instances bypass them. Login limits are also based on phone+IP.
+
+Goal:
+Provide effective shared rate limiting suitable for the actual Replit production deployment.
+
+Constraints:
+- Do not invent infrastructure that Replit does not provide.
+- Inspect the existing project/deployment architecture first.
+- Prefer an existing PostgreSQL-backed mechanism if appropriate, but do not create a complex generic rate-limit framework unnecessarily.
+- Preserve legitimate users behind NAT/shared IPs.
+- Include both account/phone-oriented and IP-oriented protection where appropriate.
+- Include registration, login, OTP send/resend, and other security-sensitive endpoints.
+- Include Guest request abuse protection where appropriate, but keep that as a separate concern from authentication limits.
+- Explain cleanup/retention of rate-limit records if database-backed.
+- Avoid unbounded database growth.
+- Keep the implementation MVP-sized.
+
+BLOCKER 3 — Guest request abuse
+Current issue:
+Guest inspection/towing request creation has no application-level rate limiting/quota.
+
+Goal:
+Prevent automated abuse and database exhaustion while preserving the approved Guest UX.
+
+Constraints:
+- Do not require Guest OTP/login.
+- Do not change the approved Guest business flow.
+- Do not block legitimate users sharing an IP more than necessary.
+- Use layered protection if appropriate (IP + normalized phone or another safe key).
+- Apply to request creation, not ordinary reference-data GETs unless necessary.
+- Include sensible response status/error behavior.
+- Keep it MVP-sized.
+- Explain how the limits interact with multiple provider notifications.
+- Do not add CAPTCHA unless you can justify it as necessary for MVP; prefer server-side controls first.
+
+For each blocker provide:
+1. Current code path.
+2. Root cause.
+3. Proposed design.
+4. Exact files likely to change.
+5. Whether schema/migration is required.
+6. Security trade-offs.
+7. Test cases required.
+8. Regression risks.
+9. Estimated implementation scope/complexity.
+10. Whether the solution is sufficient for public MVP launch.
+
+IMPORTANT:
+- Do not implement.
+- Do not change the schema yet.
+- Do not install packages.
+- Do not commit or push.
+- Do not address unrelated MEDIUM/LOW/INFO findings.
+- Do not add future features.
