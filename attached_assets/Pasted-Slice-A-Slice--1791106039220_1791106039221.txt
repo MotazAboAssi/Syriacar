@@ -1,0 +1,95 @@
+Slice A مقبولة مبدئيًا بناءً على تقريرك.
+
+قبل البدء بأي Slice جديدة، نفّذ فقط مهمة تجهيز بيئة الاختبار التالية. لا تبدأ Slice B ولا أي تغيير في Home أو UX.
+
+### 1. Restore previous development test accounts
+
+أعد الحسابات الوهمية السابقة التي كانت موجودة للاختبارات development-only، بما فيها:
+
+* +963900007701 — verified
+* +963900007702 — pending_verification
+* +963900007703 — rejected
+* +963900007704 — no-match
+* +963900007705 — towing test
+* +963900007706 — empty vehicle
+
+والـvehicles/fixtures المرتبطة بها كما كانت في الاختبارات السابقة.
+
+استخدم نفس test password السابق:
+`TEST_ONLY_Syriacar_2026!`
+
+لا تغير production data ولا production seeds.
+
+### 2. Provider test accounts
+
+أنشئ/أعد فقط حسابات Provider development/test اللازمة لاختبار Slice A.
+
+نحتاج على الأقل:
+
+* Provider Active — لاختبار login والـprofile والnotifications.
+* Provider Pending — لاختبار رفض الدخول.
+* Provider Disabled — لاختبار رفض الدخول وإبطال session موجودة بعد تغيير الحالة.
+
+إذا كانت provider fixtures السابقة موجودة، أعد استخدامها بدل إنشاء fixtures مكررة.
+
+يجب أن تكون الحسابات محمية development/test-only ولا يمكن إنشاؤها أو استخدامها في production.
+
+### 3. Test links
+
+بعد تجهيز الحسابات، أعطني قائمة واضحة بكل روابط صفحات الاختبار الفعلية المتاحة حاليًا، باستخدام عنوان Preview الحالي في Replit إن كان هو المتاح.
+
+أريد على الأقل:
+
+* Home
+* Provider Login
+* Provider Profile
+* Provider Notifications
+* Provider Notification Detail
+* User Login
+* User Registration
+* Guest Inspection
+* Guest Towing
+* Registered Inspection
+* Registered Towing
+
+لا تنشر التطبيق ولا تنشئ Deployment جديدًا فقط من أجل الروابط.
+
+إذا لم يكن هناك public URL حالي، أعطني relative routes بشكل واضح واذكر أن استخدامها يتم من Replit Preview.
+
+### 4. Test guide
+
+أعطني جدولًا صغيرًا:
+
+Account | Status | Purpose | Login route | What to test
+
+ثم اشرح باختصار شديد ماذا أختبر بكل حساب.
+
+### 5. Important restrictions
+
+لا:
+
+* Slice B
+* Slice C
+* Slice D
+* Home redesign
+* schema/migration
+* dependencies
+* configuration
+* production seed changes
+* Operations
+* Push
+* scheduler
+* deployment
+* commit/push
+
+لا تبدأ أي عمل آخر بعد تجهيز الحسابات.
+
+في النهاية أبلغني:
+
+* الحسابات التي تم استعادتها
+* الحسابات الجديدة
+* الروابط
+* أي fixtures تغيرت
+* وهل تم تشغيل الاختبارات الخاصة بالتأكد من أن fixtures لا تعمل في production
+
+ثم توقف وانتظر توجيهي.

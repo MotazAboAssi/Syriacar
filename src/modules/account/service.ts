@@ -10,6 +10,7 @@ import { createChallenge, latestChallenge, lockChallenges, otpState, phoneLock, 
 import { accountTransaction, getAccountLimits, type AccountLimits } from "./rate-limits.ts";
 import { invalidRegistrationFlow, registrationCookie, registrationMatches, type RegistrationProof } from "./registration-flow.ts";
 import { prepareRegistration } from "./registration-preparation.ts";
+import { requireTestAccountEnvironment } from "../../server/db/seed/test-account-access.ts";
 
 export type User = typeof s.users.$inferSelect;
 export const profile = (user: User): Profile => ({
@@ -17,6 +18,7 @@ export const profile = (user: User): Profile => ({
 });
 export async function register(input: unknown, db: Connection, runtime: AccountRuntime, limits: AccountLimits) {
   const data = credentials(input, true);
+  requireTestAccountEnvironment(data.phone);
   const challenge = await prepareRegistration(db, runtime, async (tx, work) => {
     await phoneLock(tx, data.phone);
     work.checkpoint();
@@ -130,6 +132,7 @@ export async function verifyOtp(input: unknown, db: Connection, runtime: Account
 }
 export async function login(input: unknown, db: Connection, runtime: AccountRuntime, limits: AccountLimits): Promise<User> {
   const data = credentials(input);
+  requireTestAccountEnvironment(data.phone);
   const result = await accountTransaction(db, async tx => {
   await phoneLock(tx, data.phone);
   const [user] = await tx.select().from(s.users).where(eq(s.users.phone, data.phone)).for("update");
@@ -162,9 +165,11 @@ export async function login(input: unknown, db: Connection, runtime: AccountRunt
   return result.user;
 }
 export async function authenticatedUser(id: string, db: Connection): Promise<User> {
+  requireTestAccountEnvironment(id);
   const [row] = await db.select().from(s.users)
     .where(and(eq(s.users.id, id), eq(s.users.isActive, true), eq(s.users.isDeleted, false))).for("update");
   if (!row) throw new AccountError(401, messages.expiredSession);
+  requireTestAccountEnvironment(row.phone);
   return row;
 }
 export async function saveHome(input: unknown, user: User, db: Connection): Promise<Profile> {

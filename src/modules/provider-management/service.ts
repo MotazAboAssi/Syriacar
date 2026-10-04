@@ -7,11 +7,14 @@ import { checkPassword, type AccountRuntime } from "../account/security.ts";
 import { accountTransaction, type AccountLimits } from "../account/rate-limits.ts";
 import { providerSessionCookie } from "./security.ts";
 import type { ProviderNotification, ProviderNotificationPage, ProviderProfile, ProviderReferences } from "./contracts.ts";
+import { requireTestAccountEnvironment } from "../../server/db/seed/test-account-access.ts";
 
 export type Provider = typeof s.providers.$inferSelect;
 export async function activeProvider(db: Connection, id: string): Promise<Provider> {
+  requireTestAccountEnvironment(id);
   const [provider] = await db.select().from(s.providers).where(eq(s.providers.id, id)).for("share");
   if (!provider || provider.status !== "active") throw new AccountError(403, "حساب المزود غير متاح للدخول.");
+  requireTestAccountEnvironment(provider.phone);
   return provider;
 }
 export async function profile(db: Connection, provider: Provider): Promise<ProviderProfile> {
@@ -43,6 +46,7 @@ export async function references(db: Connection): Promise<ProviderReferences> {
 }
 export async function login(input: unknown, db: Connection, runtime: AccountRuntime, limits: AccountLimits) {
   const data = credentials(input);
+  requireTestAccountEnvironment(data.phone);
   // AccountLimits accepts opaque identity strings. Its exact SQL/policy is unchanged.
   const identity = "provider:" + data.phone;
   const result = await accountTransaction(db, async tx => {
