@@ -1,0 +1,57 @@
+ننتقل الآن إلى Blocker 3 فقط — Guest Request Abuse Protection.
+
+استخدم Plan + Power فقط.
+لا تبدأ Build ولا تنفذ أي تغيير.
+
+السياق:
+- Blocker 1 مكتمل.
+- Blocker 2 مكتمل ومطبق عبر PostgreSQL rate limiting.
+- لا يوجد IP contract موثوق حتى الآن، لذلك لا تفترض أو تنفذ IP enforcement.
+- لا تعِد تصميم security_rate_limits؛ أعد استخدام آلية PostgreSQL المشتركة التي أصبحت موجودة في Blocker 2.
+- لا تبدأ Operations أو Super Admin أو Provider Management.
+- لا تغيّر Guest UX إلا بالحد الأدنى الضروري للحماية.
+- لا تضف CAPTCHA أو OTP أو تسجيل دخول للـGuest إلا إذا كان هناك سبب موثق ومطلوب؛ الهدف هو abuse protection مع الحفاظ على Guest flow الحالي.
+- لا تغيّر business schema إلا إذا أثبتت الخطة أن ذلك ضروري، وفي هذه الحالة توقف عند PLAN ولا تنفذ.
+
+راجع الكود الحالي الفعلي بعد Blocker 2 وحدد بدقة:
+1. أين يتم إنشاء Guest Inspection service_request.
+2. أين يتم إنشاء Guest Towing service_request.
+3. أين يتم إنشاء notifications.
+4. ما هي أفضل مفاتيح rate limiting المتاحة حاليًا دون IP.
+5. كيف نمنع DB/resource exhaustion دون التأثير على المستخدم الطبيعي.
+6. كيف يجب أن تتكامل الحدود مع security_rate_limits الموجود حاليًا.
+7. lock ordering مع PostgreSQL limiter الحالي، لتجنب أي lock inversion.
+8. ما الذي يجب أن يحدث عند رفض quota.
+9. ما الذي يجب أن يحدث عند فشل PostgreSQL limiter.
+10. ما هي الاختبارات المطلوبة، وخصوصًا concurrency باستخدام connections مستقلة.
+
+استخدم الحدود التي سبق اعتمادها في مراجعة Blocker 2 ما لم يكشف الكود أو المتطلبات الحالية تعارضًا حقيقيًا:
+- Guest creation: 30/min per IP كان مقترحًا، لكن IP غير معتمد حاليًا؛ لا تستبدله بتخمين.
+- parent phone: 10/hour
+- notification phone: 40/hour
+- parent/global: 20/hour
+- GET/locality/location endpoints لا تُحسب كإنشاء طلب.
+
+حدد بوضوح ما يمكن تطبيقه الآن باستخدام phone/account/business-safe keys، وما يجب تأجيله إلى حين اعتماد مصدر IP موثوق.
+
+المطلوب في النهاية:
+- Verdict: READY FOR BUILD أو NEEDS REVISION.
+- schema impact.
+- reuse plan للـsecurity_rate_limits.
+- exact scopes/keys/limits المقترحة.
+- lock ordering.
+- integration points.
+- Guest UX impact.
+- failure/429/503 behavior.
+- concurrency/abuse tests.
+- regression tests.
+- files expected to change.
+- migration impact إن وجد.
+- أي مخاطر متبقية.
+
+لا تنفذ شيئًا.
+لا migration.
+لا package installation.
+لا seed.
+لا commit.
+لا push.
