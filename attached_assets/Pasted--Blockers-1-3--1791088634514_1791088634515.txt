@@ -1,0 +1,80 @@
+الخطة السابقة لمعالجة Blockers 1–3 مقبولة مبدئيًا، لكن قبل أي تنفيذ أريد منك مراجعة تنفيذية أخيرة للخطة فقط.
+
+لا تعدّل أي ملف.
+لا تنشئ migration.
+لا تثبّت packages.
+لا تشغّل تغييرات على DB.
+لا تعمل commit/push.
+لا تعالج أي MEDIUM/LOW/INFO أو أي feature خارج Blockers 1–3.
+
+أريد منك التحقق فقط من النقاط التالية:
+
+1. Blocker 1 — Registration takeover
+هل registration-flow proof المقترح بالـHttpOnly signed cookie يحقق فعلًا الفصل بين registration attempts، خصوصًا:
+- A يبدأ registration
+- B يعيد بدء registration لنفس الهاتف
+- OTP الخاص بـB يصل إلى الهاتف
+- A يرسل OTP من صفحته القديمة
+- لا يمكن تفعيل بيانات B أو بيانات غير مرتبطة بمحاولة A
+- resend / inactive login / multiple tabs / concurrent verification
+
+تحقق أيضًا أن التصميم لا يخلق طريقة لتجاوز OTP أو password verification.
+
+2. Blocker 2 — PostgreSQL rate limiting
+أريد منك التركيز هنا بشكل خاص.
+
+تحقق من أن التصميم:
+- يعمل بأمان مع أكثر من Replit process/instance.
+- لا يعتمد على in-memory state.
+- لا يحتاج Redis أو خدمة خارجية.
+- لا يفتح transaction أثناء انتظار Whapi أو أي network call.
+- لا يسبب deadlock مع pool الحالي (5 connections/process).
+- يستطيع إجراء atomic admission تحت concurrent requests.
+- لا يسمح بتجاوز الحدود عند race conditions.
+- لا يجعل cleanup نفسه مصدر race أو deadlock.
+- لا يخزن raw phone numbers أو raw IPs.
+- لا يعتمد على X-Forwarded-For غير الموثوق.
+
+أريد منك أيضًا مراجعة الحدود المقترحة نفسها:
+registration 3/hour phone + 30/hour IP
+login 5 failures/15m phone + 100/15m IP
+OTP send 5/hour phone
+resend 60/hour IP
+OTP verification 30/hour phone + 300/hour IP
+delete 5/hour account + 60/hour IP
+Guest limits كما في الخطة.
+
+إذا كانت أي قيمة غير مناسبة لـ MVP أو قد تسبب false positives واضحة، لا تغيّرها مباشرة؛ اذكر المشكلة واقترح قيمة بديلة مع سبب مختصر.
+
+3. IP handling
+لا تفترض أن أول X-Forwarded-For موثوق.
+حدد بالضبط ما الذي يجب أن نعرفه من Replit deployment/runtime قبل التنفيذ، وما الذي يمكننا اعتماده من Next.js/Node الحالي.
+إذا كان لا يمكن إثبات IP موثوق قبل اختيار نوع deployment، اذكر ذلك كـprecondition واضح ولا تخترع implementation.
+
+4. Blocker 3 — Guest abuse
+تحقق أن Guest inspection وGuest towing يستخدمان scopes مستقلة عن authentication لكن مشتركة بين خدمتي Guest، وأن:
+- parent creation تُحسب مرة واحدة.
+- كل notification تُحسب منفصلة.
+- continuation لا تستهلك parent quota مرة أخرى.
+- لا توجد partial writes عند رفض quota.
+- GET endpoints لا تستهلك creation quota.
+- 429 لا يؤدي إلى auto retry من الواجهة.
+
+5. Schema
+تحقق أن جدول rate-limit واحد يكفي فعلًا لكل الحالات.
+حدد schema minimal المقترح:
+columns + unique constraint + indexes + retention fields فقط.
+لا تضف جداول أخرى إلا إذا كان هناك سبب تقني ضروري.
+
+6. التنفيذ
+أعطني بعد المراجعة:
+- Verdict: APPROVED / NEEDS REVISION
+- أي نقاط يجب تعديلها قبل التنفيذ.
+- قائمة الملفات النهائية المتوقع تعديلها.
+- هل migration واحدة تكفي؟
+- ترتيب التنفيذ الأفضل.
+- الاختبارات الحرجة التي يجب ألا يسمح التنفيذ بتجاوزها.
+
+مهم:
+لا أريد إعادة كتابة الخطة كاملة.
+أريد مراجعة نقدية مركزة لتحديد هل أصبحت جاهزة الآن للتنفيذ أم لا.
