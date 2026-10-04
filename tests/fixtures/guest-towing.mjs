@@ -7,7 +7,7 @@ import { withInspectionFixture } from "./guest-inspection.mjs";
 import { withManualSeedIsolation } from "./manual-seed-isolation.mjs";
 
 export const noon = new Date("2026-10-04T09:00:00Z");
-export const runtime = { now: () => noon };
+export const runtime = { now: () => noon, quotaSecret: "towing-unit-" + randomUUID() };
 
 export async function withTowingFixture(check) {
   // Section B intentionally includes all open providers, even outside the
@@ -50,6 +50,7 @@ export async function withTowingFixture(check) {
     const input = { originGovernorateId: f.gov, destGovernorateId: f.otherGov, providerId: ids.originA,
       guestName: "ضيف تحقق", guestPhone: "+963900000001", acceptedTerms: true };
     await check({ ...f, ids, otherBase, extraDest, otherBaseRegion, towType, input,
-      api: towingHandlers(() => tx, runtime) });
+      runtime: { ...runtime, quotaSecret: f.runtime.quotaSecret },
+      api: towingHandlers(() => tx, { ...runtime, quotaSecret: f.runtime.quotaSecret }) });
   }, { withoutContactPhone: true, connection }));
 }

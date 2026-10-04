@@ -3,11 +3,14 @@ import { getDatabase } from "../../server/db/client.ts";
 import { InspectionError } from "../guest-inspection/validation.ts";
 import { listGovernorates, listTowingProviders, notifyTowing, prepareLocation, type TowingConnection, type TowingRuntime } from "./service.ts";
 import { TowingError } from "./validation.ts";
+import { guestFailureResponse } from "../guest-security/rate-limits.ts";
 
 const headers = { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" };
 async function respond(action: () => Promise<unknown>, status = 200) {
   try { return Response.json(await action(), { status, headers }); }
   catch (error) {
+    const failure = guestFailureResponse(error, headers);
+    if (failure) return failure;
     if (error instanceof TowingError || error instanceof InspectionError) {
       return Response.json({ error: error.message, ...(error.fields ? { fields: error.fields } : {}) }, { status: error.status, headers });
     }

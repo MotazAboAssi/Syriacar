@@ -254,7 +254,7 @@ export default function GuestInspectionForm() {
       } else if (failure.status === 500 || failure.status === 503) {
         setFormError("حدث خطأ أثناء تسجيل الطلب. حاول مرة أخرى.");
       } else if (failure.status) {
-        setFormError("تعذر تسجيل الطلب. تحقق من البيانات وحاول مرة أخرى.");
+        setFormError(failure.payload?.error || "تعذر تسجيل الطلب. تحقق من البيانات وحاول مرة أخرى.");
       } else {
         setPhase("unknown");
         setFormError("تعذر معرفة نتيجة الإرسال. قد يكون الطلب قد سُجّل؛ لم تتم إعادة المحاولة تلقائياً.");

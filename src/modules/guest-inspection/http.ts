@@ -2,6 +2,7 @@ import "server-only";
 import { getDatabase } from "../../server/db/client.ts";
 import { createGuestInspection, listLocalities, listProviders, type InspectionConnection, type InspectionRuntime } from "./service.ts";
 import { InspectionError } from "./validation.ts";
+import { guestFailureResponse } from "../guest-security/rate-limits.ts";
 
 const headers = { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" };
 
@@ -9,6 +10,8 @@ async function safeResponse(action: () => Promise<unknown>, status = 200) {
   try {
     return Response.json(await action(), { status, headers });
   } catch (error) {
+    const failure = guestFailureResponse(error, headers);
+    if (failure) return failure;
     if (error instanceof InspectionError) {
       return Response.json({ error: error.message, ...(error.fields ? { fields: error.fields } : {}) },
         { status: error.status, headers });

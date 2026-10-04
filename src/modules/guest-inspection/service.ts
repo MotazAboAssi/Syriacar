@@ -6,11 +6,12 @@ import * as s from "../../server/db/schema.ts";
 import type { GuestInspectionResult, InspectionProvider, LocalitiesResult, ProvidersResult } from "./contracts.ts";
 import { openWindow } from "./availability.ts";
 import { InspectionError, isE164, isUuid, parseGuestInspection, parseLocality } from "./validation.ts";
+import { GuestLimits, guestTransaction, type GuestQuotaRuntime } from "../guest-security/rate-limits.ts";
 
 type Database = ReturnType<typeof getDatabase>;
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 export type InspectionConnection = Database | Transaction;
-export interface InspectionRuntime { now?: () => Date; id?: () => string }
+export interface InspectionRuntime extends GuestQuotaRuntime { now?: () => Date; id?: () => string }
 
 async function validateLocality(connection: InspectionConnection, governorateId: string, regionId: string) {
   const [row] = await connection.select({ id: s.regions.id }).from(s.regions)
@@ -113,7 +114,8 @@ export async function createGuestInspection(
 ): Promise<GuestInspectionResult> {
   const input = parseGuestInspection(body);
   const id = runtime.id ?? randomUUID;
-  return connection.transaction(async (tx) => {
+  const limits = new GuestLimits();
+  return guestTransaction(connection, async (tx) => {
     await validateLocality(tx, input.governorateId, input.regionId);
     // Share locks keep existing provider status/locality/schedule stable during
     // confirmation. History stores the match at creation, not later reclassification.
@@ -130,6 +132,7 @@ export async function createGuestInspection(
     const contactPhone = await readContactPhone(tx);
     const requestId = id(), notificationId = provider ? id() : null;
     const matchingStatus = provider ? "matched" : "no_match";
+    await limits.admit(tx, input.guestPhone, true, !!provider, runtime);
     await tx.insert(s.serviceRequests).values({
       id: requestId, serviceType: "inspection", userType: "guest",
       userId: null, vehicleId: null, guestName: input.guestName, guestPhone: input.guestPhone,
@@ -144,6 +147,7 @@ export async function createGuestInspection(
         originGovernorateId: null, destGovernorateId: null, createdAt: now,
       });
     }
+    await limits.cleanup(tx);
     return {
       requestId, notificationId, matchingStatus, contactPhone,
       provider: provider ? { id: provider.id, businessName: provider.businessName, phone: provider.phone } : null,

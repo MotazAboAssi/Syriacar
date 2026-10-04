@@ -74,8 +74,9 @@ export async function withInspectionFixture(check, { withoutContactPhone = false
         governorateId: gov, regionId: region, providerId: ids.active,
         guestName: "ضيف تحقق", guestPhone: "+963900000001", acceptedTerms: true,
       };
-      const api = inspectionHandlers(() => tx, { now: () => noon });
-      await check({ tx, gov, region, otherGov, otherRegion, alternateRegion, emptyRegion, ids, input, api, group, brand, fuel, ops });
+      const runtime = { now: () => noon, quotaSecret: "inspection-fixture-" + randomUUID() };
+      const api = inspectionHandlers(() => tx, runtime);
+      await check({ tx, gov, region, otherGov, otherRegion, alternateRegion, emptyRegion, ids, input, api, runtime, group, brand, fuel, ops });
       throw rollback;
     });
   } catch (error) {

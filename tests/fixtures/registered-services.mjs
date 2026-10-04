@@ -23,7 +23,7 @@ export async function parsed(response) {
 /** Genuine PG handlers in rollback-only fixtures; no OTP/Whapi or live account. */
 export async function withRegisteredFixture(check) {
   return withTowingFixture(async f => {
-    const runtime = { now: () => noon, secret: "registered-verification-only-secret" };
+    const runtime = { now: () => noon, secret: "registered-verification-only-secret", quotaSecret: f.runtime.quotaSecret };
     const a = randomUUID(), b = randomUUID(), va = randomUUID(), vb = randomUUID();
     let number = randomInt(100000000, 900000000);
     await f.tx.insert(s.users).values([a, b].map(id => ({

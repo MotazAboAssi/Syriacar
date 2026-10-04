@@ -192,9 +192,9 @@ test("notification insert failure rolls back its newly created request and prese
   const first = await notifyTowing(f.input, f.tx, runtime);
   const failing = towingHandlers(() => f.tx, { ...runtime, id: () => first.notificationId });
   const before = await rows(f.tx, f.gov);
-  assert.equal((await failing.create(post({ ...f.input, providerId: f.ids.destA }))).status, 500);
+  assert.equal((await failing.create(post({ ...f.input, providerId: f.ids.destA }))).status, 503);
   assert.deepEqual(await rows(f.tx, f.gov), before);
-  assert.equal((await failing.create(post({ ...f.input, providerId: f.ids.destOnlyB, requestProof: first.requestProof }))).status, 500);
+  assert.equal((await failing.create(post({ ...f.input, providerId: f.ids.destOnlyB, requestProof: first.requestProof }))).status, 503);
   assert.deepEqual(await rows(f.tx, f.gov), before);
   assert.equal((await notices(f.tx, first.requestId)).length, 1);
 }));

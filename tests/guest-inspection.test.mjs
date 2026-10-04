@@ -18,7 +18,7 @@ import { withInspectionFixture as fixture } from "./fixtures/guest-inspection.mj
 nextEnv.loadEnvConfig(process.cwd());
 const noon = new Date("2026-10-04T09:00:00Z"); // Sunday, 12:00 Damascus
 const friday = new Date("2026-10-09T09:00:00Z");
-const runtime = { now: () => noon };
+const runtime = { now: () => noon, quotaSecret: "inspection-unit-" + randomUUID() };
 const db = getDatabase();
 let originalCounts, originalReferences, originalSupportPhone;
 
@@ -219,8 +219,8 @@ test("notification creation failure rolls back the new request and returns a saf
   const generated = [failedId, existing.notificationId];
   const api = inspectionHandlers(() => tx, { ...runtime, id: () => generated.shift() });
   const response = await api.create(post(input));
-  assert.equal(response.status, 500);
-  assert.deepEqual(await response.json(), { error: "حدث خطأ. حاول مجدداً." });
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), { error: "الخدمة غير متاحة مؤقتاً. حاول مجدداً لاحقاً." });
   assert.equal((await tx.select().from(s.serviceRequests).where(eq(s.serviceRequests.id, failedId))).length, 0);
   assert.equal((await tx.select().from(s.notifications).where(eq(s.notifications.serviceRequestId, existing.requestId))).length, 1);
 }));

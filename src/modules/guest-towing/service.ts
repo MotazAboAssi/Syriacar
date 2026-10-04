@@ -9,6 +9,7 @@ import { isE164, isUuid } from "../guest-inspection/validation.ts";
 import type { TowingProvider, TowingProvidersResult, TowingResult } from "./contracts.ts";
 import { objectBody, parseRoute, parseTowing, TowingError } from "./validation.ts";
 import { signRequest, verifyRequest } from "./request-proof.ts";
+import { GuestLimits, guestTransaction } from "../guest-security/rate-limits.ts";
 
 export { listLocalities as listGovernorates };
 export type TowingConnection = InspectionConnection;
@@ -92,7 +93,8 @@ export async function notifyTowing(body: unknown, connection: TowingConnection =
   runtime: TowingRuntime = {}): Promise<TowingResult> {
   const input = parseTowing(body);
   const id = runtime.id ?? randomUUID;
-  return connection.transaction(async (tx) => {
+  const limits = new GuestLimits();
+  return guestTransaction(connection, async (tx) => {
     const parent = input.requestProof ? await existingRequest(tx, input.requestProof) : null;
     if (parent && (parent.originGovernorateId !== input.originGovernorateId || parent.destGovernorateId !== input.destGovernorateId
       || parent.guestName !== input.guestName || parent.guestPhone !== input.guestPhone)) {
@@ -110,6 +112,7 @@ export async function notifyTowing(body: unknown, connection: TowingConnection =
     const whatsappUrl = whatsappLink(provider.whatsappNumber,
       `أنا مستخدمك من «Syriacar»، اسمي ${input.guestName}، رقمي ${input.guestPhone}، وأريد سطحة.`);
     const matchingStatus = parent?.matchingStatus === "matched" || provider.coversRoute ? "matched" : "no_match";
+    await limits.admit(tx, parent?.guestPhone ?? input.guestPhone, !parent, true, runtime);
     if (!parent) {
       await tx.insert(s.serviceRequests).values({
         id: requestId, serviceType: "towing", userType: "guest", userId: null, vehicleId: null,
@@ -126,6 +129,7 @@ export async function notifyTowing(body: unknown, connection: TowingConnection =
       guestName: input.guestName, guestPhone: input.guestPhone,
       originGovernorateId: input.originGovernorateId, destGovernorateId: input.destGovernorateId, createdAt: now,
     });
+    await limits.cleanup(tx);
     return { requestId, requestProof, notificationId, matchingStatus,
       provider: { id: provider.id, businessName: provider.businessName, phone: provider.phone },
       whatsappUrl, delivery: "not_implemented" };
