@@ -20,6 +20,14 @@ export default function AppShell() {
             طلب سطحة كضيف
             <span aria-hidden="true">←</span>
           </a>
+          <a className="health-link" href="/login">
+            تسجيل الدخول
+            <span aria-hidden="true">←</span>
+          </a>
+          <a className="health-link" href="/register">
+            إنشاء حساب
+            <span aria-hidden="true">←</span>
+          </a>
           <a className="health-link" href="/api/health">
             فحص سلامة التطبيق
             <span aria-hidden="true">←</span>
