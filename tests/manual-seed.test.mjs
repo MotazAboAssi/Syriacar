@@ -23,6 +23,7 @@ process.env.NODE_ENV ??= "test";
 // Same rollback-only isolated frozen-schema pattern as existing foundation tests;
 // no DDL or deletes touch application tables, including when rerun after real seeding.
 const migration = await readFile(new URL("../drizzle/0000_database_foundation.sql", import.meta.url), "utf8");
+const infraMigration = await readFile(new URL("../drizzle/0001_security_rate_limits.sql", import.meta.url), "utf8");
 const baseline = await accountSnapshot();
 const options = { confirmDevelopment: true };
 async function isolated(check) {
@@ -32,7 +33,8 @@ async function isolated(check) {
       const schema = `verify_manual_${randomUUID().replaceAll("-", "")}`;
       await tx.execute(sql.raw(`CREATE SCHEMA "${schema}"`));
       await tx.execute(sql.raw(`SET LOCAL search_path TO "${schema}", public`));
-      for (const statement of migration.replaceAll('"public"', `"${schema}"`).split("--> statement-breakpoint").filter(x => x.trim())) {
+      for (const statement of (migration + "\n--> statement-breakpoint\n" + infraMigration)
+        .replaceAll('"public"', `"${schema}"`).split("--> statement-breakpoint").filter(x => x.trim())) {
         await tx.execute(sql.raw(statement));
       }
       await seedReferenceData(tx);

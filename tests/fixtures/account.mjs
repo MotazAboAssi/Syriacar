@@ -1,6 +1,7 @@
 import nextEnv from "@next/env";
 import { randomInt } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
+import { securityRateLimits } from "../../src/server/db/security-rate-limits.ts";
 import { withInspectionFixture } from "./guest-inspection.mjs";
 import { accountHandlers } from "../../src/modules/account/http.ts";
 import { AccountLimits } from "../../src/modules/account/rate-limits.ts";
@@ -69,6 +70,11 @@ export async function withAccountFixture(check) {
       },
       phone: () => "+963" + nextPhone++, now: runtime.now,
       advance: (ms) => { time = new Date(time.getTime() + ms); },
+      // Runtime time only controls OTP/session. Explicit PG-relative rate expiry
+      // for tests that intend to cross a quota boundary (NOW is tx-stable).
+      expireRates: async () => tx.execute(sql`UPDATE ${securityRateLimits} SET
+        window_expires_at = NOW() - INTERVAL '1 second',
+        blocked_until = NULL, retire_at = NOW() + INTERVAL '1 hour'`),
       challenge: async (phone) => (await tx.select().from(s.otpVerificationChallenges)
         .where(eq(s.otpVerificationChallenges.phone, phone))).sort((a, b) => b.createdAt - a.createdAt)[0],
       user: async (phone) => (await tx.select().from(s.users).where(eq(s.users.phone, phone)))[0],

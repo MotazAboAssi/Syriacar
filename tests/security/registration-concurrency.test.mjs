@@ -5,6 +5,7 @@ import { sql, eq } from "drizzle-orm";
 import { PgTable } from "drizzle-orm/pg-core";
 import { getDatabase, closeDatabase } from "../../src/server/db/client.ts";
 import * as s from "../../src/server/db/schema.ts";
+import { securityRateLimits } from "../../src/server/db/security-rate-limits.ts";
 import { accountHandlers } from "../../src/modules/account/http.ts";
 import { AccountLimits } from "../../src/modules/account/rate-limits.ts";
 import { req, parsed, password, outcome } from "../fixtures/account.mjs";
@@ -14,7 +15,7 @@ test("real independent PG transactions: one verification succeeds; registration 
   // Committed private tables are necessary for visibility between connections.
   // No public rows are written or copied, and no migration is executed.
   const db = getDatabase(), name = "registration_concurrency_" + randomUUID().replaceAll("-", "");
-  const symbol = PgTable.Symbol.Schema, tables = [s.users, s.otpVerificationChallenges];
+  const symbol = PgTable.Symbol.Schema, tables = [s.users, s.otpVerificationChallenges, securityRateLimits];
   const original = tables.map(table => table[symbol]);
   const publicDigest = async () => (await db.execute(sql`
     SELECT (SELECT md5(COALESCE(json_agg(r ORDER BY id)::text, '[]')) FROM public.users r) AS users,
@@ -24,7 +25,7 @@ test("real independent PG transactions: one verification succeeds; registration 
   let created = false;
   try {
     await db.execute(sql.raw(`CREATE SCHEMA "${name}"`)); created = true;
-    for (const table of ["users", "otp_verification_challenges"])
+    for (const table of ["users", "otp_verification_challenges", "security_rate_limits"])
       await db.execute(sql.raw(`CREATE TABLE "${name}"."${table}" (LIKE public."${table}" INCLUDING ALL)`));
     tables.forEach(table => { table[symbol] = name; });
     const sent = new Map(); let code = 700000;

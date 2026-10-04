@@ -81,7 +81,8 @@ run("hourly limit includes automatic retry and never exceeds five actual sends",
   f.advance(600001);
   f.plans.push(outcome("failed"));
   const fifth = await parsed(await f.api.resend(f.flowReq("otp/resend", "POST", { phone: p })));
-  assert.equal(fifth.status, 500); assert.equal(f.sends.length, 5);
+  assert.equal(fifth.status, 429); assert.equal(f.sends.length, 5);
+  assert.ok(Number(fifth.headers.get("Retry-After")) > 0);
   assert.equal((await f.challenge(p)).sendAttemptCount, 2);
   assert.equal((await f.challenge(p)).sendAttempts[1].error_code, "rate_limited");
   f.advance(600001);

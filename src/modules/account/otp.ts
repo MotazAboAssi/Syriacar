@@ -1,6 +1,6 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import type { InspectionConnection as Connection } from "../guest-inspection/service.ts";
 import * as s from "../../server/db/schema.ts";
 import type { OtpSendAttempt } from "../../server/db/schema/types.ts";
@@ -8,7 +8,7 @@ import type { OtpState } from "./contracts.ts";
 import { codeHash, newCode, now, type AccountRuntime } from "./security.ts";
 import { AccountError, messages } from "./validation.ts";
 import { sendWhapi, unknownOutcome, type SendOutcome } from "./whapi.ts";
-import type { AccountLimits } from "./rate-limits.ts";
+import { accountTransaction, databaseOperation, type AccountLimits } from "./rate-limits.ts";
 
 export type Challenge = typeof s.otpVerificationChallenges.$inferSelect;
 export const otpLifetime = 10 * 60 * 1000;
@@ -32,77 +32,101 @@ export function otpState(row: Challenge, time: Date): OtpState {
     sendStatus: row.sendStatus, deliveryStatus: row.deliveryStatus,
   };
 }
-export async function createChallenge(db: Connection, phone: string, runtime: AccountRuntime, limits: AccountLimits) {
+export async function lockChallenges(db: Connection, phone: string) {
+  return db.select().from(s.otpVerificationChallenges)
+    .where(and(eq(s.otpVerificationChallenges.phone, phone), eq(s.otpVerificationChallenges.purpose, "registration")))
+    .orderBy(asc(s.otpVerificationChallenges.id)).for("update");
+}
+function pendingAttempt(number: 1 | 2, time: Date): OtpSendAttempt {
+  return {
+    attempt_no: number, attempted_at: time.toISOString(), api_outcome: "pending",
+    http_status: null, provider_sent: null, provider_message_id: null,
+    provider_status: null, status_at: null, error_code: null, error_reason: null,
+  };
+}
+// A rejected retry is not a new code/message. Its predecessor still owns the hash.
+export function currentMessageIndex(row: Challenge) {
+  return row.sendAttemptCount === 2 && row.sendAttempts[1]?.error_code === "rate_limited"
+    && !row.sendAttempts[1].provider_message_id ? 0 : row.sendAttemptCount - 1;
+}
+/** Caller already holds phone/user/challenge/quota locks and has admitted first send. */
+export async function createChallenge(db: Connection, phone: string, runtime: AccountRuntime, previous?: Challenge) {
   const time = now(runtime);
-  limits.send(phone, time.getTime());
   // Called under phoneLock: keep "latest" deterministic even within one clock tick.
-  const previous = await latestChallenge(db, phone, true);
   const createdAt = new Date(Math.max(time.getTime(), previous ? previous.createdAt.getTime() + 1 : 0));
   // Lazy invalidation never impersonates successful verification/consumption.
   await db.update(s.otpVerificationChallenges).set({ expiresAt: time, retryAt: null })
     .where(and(eq(s.otpVerificationChallenges.phone, phone),
       eq(s.otpVerificationChallenges.purpose, "registration"), sql`${s.otpVerificationChallenges.consumedAt} IS NULL`));
   const id = randomUUID();
+  const code = newCode(runtime);
   const [row] = await db.insert(s.otpVerificationChallenges).values({
-    id, phone, purpose: "registration", codeHash: codeHash(newCode(runtime), id, runtime),
+    id, phone, purpose: "registration", codeHash: codeHash(code, id, runtime),
     expiresAt: new Date(time.getTime() + otpLifetime), consumedAt: null,
     attemptCount: 0, maxAttempts: 5, createdAt, lastSentAt: time,
-    sendAttemptCount: 0, sendStatus: "pending", sendAttempts: [],
+    sendAttemptCount: 1, sendStatus: "pending", sendAttempts: [pendingAttempt(1, time)],
   }).returning();
-  return row;
+  return { row, code };
 }
 async function readChallenge(db: Connection, id: string) {
-  const [row] = await db.select().from(s.otpVerificationChallenges).where(eq(s.otpVerificationChallenges.id, id));
-  return row;
+  return databaseOperation(async () => {
+    const [row] = await db.select().from(s.otpVerificationChallenges).where(eq(s.otpVerificationChallenges.id, id));
+    return row;
+  });
 }
 /** Both sends stay in the requesting flow. Async timer never blocks Node's event loop. */
-export async function sendChallenge(db: Connection, id: string, runtime: AccountRuntime, limits: AccountLimits): Promise<Challenge> {
+export async function sendChallenge(db: Connection, id: string, runtime: AccountRuntime, limits: AccountLimits,
+  firstCode?: string): Promise<Challenge> {
   for (;;) {
     const current = await readChallenge(db, id);
     if (!current) throw new AccountError(500, messages.server);
     if (current.consumedAt || current.expiresAt <= now(runtime) || current.sendAttemptCount >= 2) return current;
-    if (current.sendAttemptCount === 1) {
+    if (current.sendAttemptCount === 1 && !firstCode) {
       if (!current.retryAt) return current;
       const delay = current.retryAt.getTime() - now(runtime).getTime();
       if (delay > 0) await (runtime.sleep ?? ((ms) => new Promise<void>((resolve) => setTimeout(resolve, ms))))(delay);
     }
-    const code = newCode(runtime);
-    const claimed = await db.transaction(async (tx) => {
+    const claimed = firstCode ? { row: current, number: 1 as const, code: firstCode, error: null } :
+      await accountTransaction(db, async (tx) => {
+      await phoneLock(tx, current.phone);
       const [row] = await tx.select().from(s.otpVerificationChallenges)
         .where(eq(s.otpVerificationChallenges.id, id)).for("update");
       const time = now(runtime);
       if (!row || row.consumedAt || row.expiresAt <= time || row.sendAttemptCount >= 2 ||
         (row.sendAttemptCount === 1 && (!row.retryAt || row.retryAt > time))) return null;
       const number = (row.sendAttemptCount + 1) as 1 | 2;
-      let rateLimited = false;
-      if (number === 2) {
-        try { limits.send(row.phone, time.getTime()); } catch (error) {
-          if (!(error instanceof AccountError) || error.status !== 429) throw error;
-          rateLimited = true; // terminal attempted retry; no network call can exceed the hourly send ceiling.
-        }
+      try {
+        await limits.admit(tx, [limits.budget("send", row.phone)], runtime);
+      } catch (error) {
+        if (!(error instanceof AccountError) || error.status !== 429) throw error;
+        if (number === 1) throw error; // legacy unclaimed challenge: no reservation exists.
+        const attempt = { ...pendingAttempt(2, time), api_outcome: "failed" as const, error_code: "rate_limited" };
+        const [updated] = await tx.update(s.otpVerificationChallenges).set({
+          sendAttemptCount: 2, sendAttempts: [...row.sendAttempts, attempt], retryAt: null,
+        }).where(eq(s.otpVerificationChallenges.id, id)).returning();
+        return { row: updated, number, code: "", error };
       }
-      const attempt: OtpSendAttempt = {
-        attempt_no: number, attempted_at: time.toISOString(), api_outcome: "pending",
-        http_status: null, provider_sent: null, provider_message_id: null,
-        provider_status: null, status_at: null, error_code: null, error_reason: null,
-      };
+      // Generate and replace only after admission; denied retries retain the old hash.
+      const code = newCode(runtime), attempt = pendingAttempt(number, time);
       const [updated] = await tx.update(s.otpVerificationChallenges).set({
         codeHash: codeHash(code, id, runtime), expiresAt: new Date(time.getTime() + otpLifetime),
         lastSentAt: time, sendAttemptCount: number, sendStatus: "pending", deliveryStatus: null,
         retryAt: null, sendAttempts: [...row.sendAttempts, attempt],
       }).where(eq(s.otpVerificationChallenges.id, id)).returning();
-      return { row: updated, number, rateLimited };
+      await limits.cleanup(tx);
+      return { row: updated, number, code, error: null };
     });
+    firstCode = undefined;
     if (!claimed) return (await readChallenge(db, id))!;
-    let result: SendOutcome;
-    if (claimed.rateLimited) {
-      result = { api_outcome: "failed", http_status: null, provider_sent: null, provider_message_id: null,
-        provider_status: null, status_at: null, error_code: "rate_limited", error_reason: null };
-    } else {
-      try { result = await (runtime.sender ?? sendWhapi)(claimed.row.phone, code); }
-      catch { result = unknownOutcome(); }
+    if (claimed.error) {
+      claimed.error.detail.otp = otpState(claimed.row, now(runtime));
+      throw claimed.error;
     }
-    await db.transaction(async (tx) => {
+    let result: SendOutcome;
+    try { result = await (runtime.sender ?? sendWhapi)(claimed.row.phone, claimed.code); }
+    catch { result = unknownOutcome(); }
+    await accountTransaction(db, async (tx) => {
+      await phoneLock(tx, claimed.row.phone);
       const [row] = await tx.select().from(s.otpVerificationChallenges)
         .where(eq(s.otpVerificationChallenges.id, id)).for("update");
       if (!row || row.sendAttemptCount !== claimed.number ||

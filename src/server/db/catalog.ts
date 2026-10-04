@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import { is, SQL, sql } from "drizzle-orm";
 import { getTableConfig, PgDialect, PgTable } from "drizzle-orm/pg-core";
+import { readMigrationFiles } from "drizzle-orm/migrator";
 import { getDatabase } from "./client.ts";
 import * as schema from "./schema.ts";
+import { securityRateLimits } from "./security-rate-limits.ts";
 
 export const tableConfigs = Object.values(schema)
   .filter((value) => is(value, PgTable))
@@ -94,8 +96,9 @@ export async function verifyCatalog() {
 
   assert.deepEqual(tableResult.rows, [
     { schema_name: "drizzle", table_name: "__drizzle_migrations" },
-    ...tableConfigs.map((t) => ({ schema_name: "public", table_name: t.name })),
-  ], "Exactly 24 application tables and Drizzle's migration ledger must exist");
+    ...[...tableConfigs.map(t => t.name), "security_rate_limits"].sort()
+      .map(name => ({ schema_name: "public", table_name: name })),
+  ], "Exactly 24 business tables, one infrastructure table and the migration ledger must exist");
 
   let foreignKeys = 0;
   let primaryKeys = 0;
@@ -104,7 +107,8 @@ export async function verifyCatalog() {
   let indexes = 0;
   let columns = 0;
 
-  for (const table of tableConfigs) {
+  const infra = { table: securityRateLimits, ...getTableConfig(securityRateLimits) };
+  for (const table of [...tableConfigs, infra]) {
     const actualColumns = columnResult.rows.filter((c) => c.table_name === table.name);
     assert.deepEqual(actualColumns.map((c) => c.column_name), table.columns.map((c) => c.name));
     for (const column of table.columns) {
@@ -126,7 +130,7 @@ export async function verifyCatalog() {
           assert.deepEqual(actualDefault, expected, `${label} default value`);
         }
       }
-      columns++;
+      if (table.name !== infra.name) columns++;
     }
 
     const expectedConstraints: { name: string; kind: string; columns: string[] }[] = [];
@@ -160,7 +164,7 @@ export async function verifyCatalog() {
       // Column sets in CHECKs are normalized by PostgreSQL. Behavioral tests
       // separately exercise every required CHECK with accepted/rejected rows.
       expectedConstraints.push({ name: check.name, kind: "c", columns: actual.columns });
-      checks++;
+      if (table.name !== infra.name) checks++;
     }
     const actualConstraints = constraintResult.rows.filter((c) => c.table_name === table.name);
     assert.deepEqual(
@@ -169,7 +173,7 @@ export async function verifyCatalog() {
       `${table.name} constraints`,
     );
     assert.ok(actualConstraints.every((c) => c.validated), `${table.name}: no unvalidated constraints`);
-    primaryKeys += expectedConstraints.filter((c) => c.kind === "p").length;
+    if (table.name !== infra.name) primaryKeys += expectedConstraints.filter((c) => c.kind === "p").length;
     uniqueConstraints += expectedConstraints.filter((c) => c.kind === "u").length;
 
     const expectedIndexes = [
@@ -195,7 +199,7 @@ export async function verifyCatalog() {
       assert.ok(actualIndexes.some((i) => foreignColumns.every((c, n) => i.columns[n] === c)),
         `${key.getName()} needs a leading-column FK index`);
     }
-    indexes += actualIndexes.length;
+    if (table.name !== infra.name) indexes += actualIndexes.length;
   }
 
   const enums = Object.values(schema).filter((value) => typeof value === "function" && "enumName" in value);
@@ -203,10 +207,14 @@ export async function verifyCatalog() {
     enumResult.rows.sort((a, b) => a.name.localeCompare(b.name)),
     enums.map((e) => ({ name: e.enumName, values: [...e.enumValues] })).sort((a, b) => a.name.localeCompare(b.name)),
   );
-  const ledger = await db.execute<{ migrations: number }>(sql`
-    SELECT count(*)::int AS migrations FROM drizzle.__drizzle_migrations
+  const ledger = await db.execute<{ hash: string; created_at: string }>(sql`
+    SELECT hash, created_at FROM drizzle.__drizzle_migrations ORDER BY created_at
   `);
-  assert.equal(ledger.rows[0].migrations, 1, "One foundation migration must be recorded");
+  const approvedMigrations = readMigrationFiles({ migrationsFolder: "./drizzle" });
+  assert.equal(approvedMigrations.length, 2, "Only two migrations are approved");
+  assert.deepEqual(ledger.rows.map(row => ({ hash: row.hash, when: Number(row.created_at) })),
+    approvedMigrations.map(m => ({ hash: m.hash, when: m.folderMillis })),
+    "Ledger must exactly match foundation and security rate limits migrations");
   const timezone = await db.execute<{ TimeZone: string }>(sql`SHOW timezone`);
   assert.equal(timezone.rows[0].TimeZone, "UTC");
   return { tables: tableConfigs.length, columns, enums: enums.length, primaryKeys, foreignKeys, uniqueConstraints, checks, indexes };

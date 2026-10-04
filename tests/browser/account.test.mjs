@@ -118,6 +118,35 @@ run("full Build6 happy path in real browser with actual handlers+PG and secure c
   await f.page.waitForURL("**/register"); await registerBrowser(f, phone);
   assert.equal((await f.user(phone)).isActive, false);
 });
+run("quota429 after first admitted send retains the creator's OTP page and proof", async f => {
+  const phone = f.phone();
+  for (let i = 0; i < 4; i++) await f.limits.admit(f.tx, [f.limits.budget("send", phone)], f.runtime);
+  f.plans.push(outcome("failed"));
+  await registerBrowser(f, phone); await f.drain();
+  assert.equal(f.calls.find(c => c.path === "/api/account/register").status, 429);
+  assert.equal(f.sends.length, 1);
+  assert.equal(await f.page.evaluate(() => sessionStorage.getItem("syriacar.account.otpAttempt")),
+    (await f.challenge(phone)).id);
+  assert.ok((await f.context.cookies()).some(c => c.name === registrationCookieName));
+  assert.ok(!(await f.context.cookies()).some(c => c.name === "syriacar_user"));
+  await verifyBrowser(f); await f.page.waitForURL("**/account");
+  assert.equal((await f.user(phone)).isActive, true);
+});
+run("explicit resend adopts only its own replacement when retry quota returns429", async f => {
+  const phone = await registerBrowser(f); await f.drain();
+  const previous = await f.page.evaluate(() => sessionStorage.getItem("syriacar.account.otpAttempt"));
+  for (let i = 0; i < 3; i++) await f.limits.admit(f.tx, [f.limits.budget("send", phone)], f.runtime);
+  f.plans.push(outcome("failed"));
+  f.advance(600001); await f.page.clock.fastForward(610000);
+  await f.page.getByRole("button", { name: "إعادة إرسال الرمز", exact: true }).click();
+  await f.page.waitForFunction(old => sessionStorage.getItem("syriacar.account.otpAttempt") !== old, previous);
+  await f.drain();
+  assert.equal(f.calls.find(c => c.path === "/api/account/otp/resend").status, 429);
+  assert.equal(f.sends.length, 2);
+  assert.equal(await f.page.evaluate(() => sessionStorage.getItem("syriacar.account.otpAttempt")),
+    (await f.challenge(phone)).id);
+  await verifyBrowser(f); await f.page.waitForURL("**/account");
+});
 run("OTP five incorrect submissions, disabled early resend, expiry/invalidation+cooldown then resend", async f => {
   const phone = await registerBrowser(f);
   assert.equal(await f.page.getByRole("button", { name: "إعادة إرسال الرمز", exact: true }).isDisabled(), true);

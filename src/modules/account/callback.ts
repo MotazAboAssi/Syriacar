@@ -5,8 +5,8 @@ import * as s from "../../server/db/schema.ts";
 import { now, type AccountRuntime } from "./security.ts";
 import { AccountError } from "./validation.ts";
 import { providerStatus } from "./whapi.ts";
-import { sendChallenge } from "./otp.ts";
-import type { AccountLimits } from "./rate-limits.ts";
+import { currentMessageIndex, phoneLock, sendChallenge } from "./otp.ts";
+import { accountTransaction, databaseOperation, type AccountLimits } from "./rate-limits.ts";
 
 const ranks: Record<string, number> = { pending: 0, sent: 1, delivered: 2, read: 3, played: 4 };
 function statusTime(value: unknown): Date | null {
@@ -28,24 +28,30 @@ export async function statusCallback(input: unknown, db: Connection, runtime: Ac
     const status = providerStatus(event.status);
     const time = statusTime(event.timestamp);
     if (typeof event.id !== "string" || event.id.length > 256 || !status || !time) continue;
-    const retry = await db.transaction(async (tx) => {
-      const rows = await tx.select().from(s.otpVerificationChallenges)
+    const candidates = await databaseOperation(() => db.select({
+      id: s.otpVerificationChallenges.id, phone: s.otpVerificationChallenges.phone,
+    }).from(s.otpVerificationChallenges)
         .where(sql`EXISTS (SELECT 1 FROM json_array_elements(${s.otpVerificationChallenges.sendAttempts}) attempt
-          WHERE attempt->>'provider_message_id' = ${event.id})`).for("update");
-      for (const row of rows) {
+          WHERE attempt->>'provider_message_id' = ${event.id})`));
+    for (const candidate of candidates) {
+      const retry = await accountTransaction(db, async (tx) => {
+        await phoneLock(tx, candidate.phone);
+        const [row] = await tx.select().from(s.otpVerificationChallenges)
+          .where(eq(s.otpVerificationChallenges.id, candidate.id)).for("update");
+        if (!row || row.phone !== candidate.phone) return null;
         const index = row.sendAttempts.findIndex((attempt) => attempt.provider_message_id === event.id);
-        if (index < 0) continue;
+        if (index < 0) return null;
         const old = row.sendAttempts[index];
-        if ((old.status_at && new Date(old.status_at) > time) || new Date(old.attempted_at) > time) continue;
+        if ((old.status_at && new Date(old.status_at) > time) || new Date(old.attempted_at) > time) return null;
         const previous = old.provider_status;
         // Confirmed delivery cannot be erased by late pending/sent/failure/deletion.
-        if (previous && (ranks[previous] ?? -1) >= 2 && (ranks[status] ?? -1) < ranks[previous]) continue;
+        if (previous && (ranks[previous] ?? -1) >= 2 && (ranks[status] ?? -1) < ranks[previous]) return null;
         if (previous && ranks[previous] !== undefined && ranks[status] !== undefined &&
-          ranks[status] < ranks[previous]) continue;
-        if (previous === status && old.status_at === time.toISOString()) continue;
+          ranks[status] < ranks[previous]) return null;
+        if (previous === status && old.status_at === time.toISOString()) return null;
         const attempts = [...row.sendAttempts];
         attempts[index] = { ...old, provider_status: status, status_at: time.toISOString() };
-        const current = index === row.sendAttemptCount - 1;
+        const current = index === currentMessageIndex(row);
         const delivered = status === "delivered" || status === "read";
         const active = !row.consumedAt && row.expiresAt > now(runtime);
         const retryAt = current && active && status === "failed" && row.sendAttemptCount < 2
@@ -61,10 +67,10 @@ export async function statusCallback(input: unknown, db: Connection, runtime: Ac
           } : {}),
         }).where(eq(s.otpVerificationChallenges.id, row.id));
         if (current && retryAt && active) return row.id;
-      }
-      return null;
-    });
-    if (retry) retries.add(retry);
+        return null;
+      });
+      if (retry) retries.add(retry);
+    }
   }
   for (const id of retries) await sendChallenge(db, id, runtime, limits);
   return { ok: true as const };

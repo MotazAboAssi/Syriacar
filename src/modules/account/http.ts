@@ -5,7 +5,7 @@ import { users } from "../../server/db/schema.ts";
 import type { InspectionConnection as Connection } from "../guest-inspection/service.ts";
 import { AccountError, messages } from "./validation.ts";
 import { clearCookie, now, secretHeaderMatches, sessionCookie, sessionUserId, type AccountRuntime } from "./security.ts";
-import { AccountLimits, getAccountLimits } from "./rate-limits.ts";
+import { AccountLimits, databaseFailure, getAccountLimits, unavailable } from "./rate-limits.ts";
 import * as account from "./service.ts";
 import { listVehicles, references, writeVehicle } from "./vehicles.ts";
 import { statusCallback } from "./callback.ts";
@@ -63,19 +63,20 @@ export function accountHandlers(connection: () => Connection = getDatabase, runt
         ...(result.cookie ? [result.cookie] : []), ...(result.cookies ?? []),
       ]) });
     } catch (error) {
+      if (databaseFailure(error)) error = unavailable();
       if (error instanceof AccountError) {
+        const errorHeaders = responseHeaders([
+          ...(error.status === 401 ? [clearCookie] : []), ...error.cookies,
+        ]);
+        if (error.retryAfter) errorHeaders.set("Retry-After", String(error.retryAfter));
         return Response.json(error.detail, {
-          status: error.status, headers: responseHeaders([
-            ...(error.status === 401 ? [clearCookie] : []), ...error.cookies,
-          ]),
+          status: error.status, headers: errorHeaders,
         });
       }
       // Never log submitted passwords, codes, JWTs, Whapi tokens/payloads or raw errors.
       return Response.json({ error: messages.server }, { status: 500, headers });
     }
   };
-  const ip = (request: Request) => request.headers.get("x-forwarded-for")?.split(",")[0].trim()
-    || request.headers.get("x-real-ip") || "unknown";
   const authResponse = async (user: account.User) => ({
     data: account.profile(user), cookie: await sessionCookie(user.id, runtime),
   });
@@ -95,7 +96,7 @@ export function accountHandlers(connection: () => Connection = getDatabase, runt
   return {
     register: (request: Request) => response(async () => {
       sameOrigin(request);
-      const result = await account.register(await body(request), ip(request), connection(), runtime, limits);
+      const result = await account.register(await body(request), connection(), runtime, limits);
       return { data: result.state, cookie: result.cookie };
     }, 201),
     otpState: (request: Request) => response(async () => {
@@ -106,7 +107,7 @@ export function accountHandlers(connection: () => Connection = getDatabase, runt
     verify: (request: Request) => response(async () => {
       sameOrigin(request);
       return { ...await authResponse(await account.verifyOtp(await body(request), connection(), runtime,
-        await readRegistrationProof(request, runtime))), cookies: [clearRegistrationCookie] };
+        await readRegistrationProof(request, runtime), limits)), cookies: [clearRegistrationCookie] };
     }),
     resend: (request: Request) => response(async () => {
       sameOrigin(request);
@@ -116,7 +117,7 @@ export function accountHandlers(connection: () => Connection = getDatabase, runt
     }),
     login: (request: Request) => response(async () => {
       sameOrigin(request);
-      return authResponse(await account.login(await body(request), ip(request), connection(), runtime, limits));
+      return authResponse(await account.login(await body(request), connection(), runtime, limits));
     }),
     logout: (request: Request) => response(async () => {
       sameOrigin(request);
@@ -125,8 +126,11 @@ export function accountHandlers(connection: () => Connection = getDatabase, runt
     profile: (request: Request) => protectedResponse(request, async (_db, user) => account.profile(user)),
     saveProfile: (request: Request) => protectedResponse(request,
       async (db, user) => account.saveHome(await body(request), user, db), true),
-    deleteAccount: (request: Request) => protectedResponse(request,
-      (db, user) => account.deleteAccount(user, db, runtime), true, true),
+    deleteAccount: (request: Request) => response(async () => {
+      sameOrigin(request);
+      const id = await sessionUserId(request, runtime);
+      return { data: await account.deleteAccount(id, connection(), runtime, limits), cookie: clearCookie };
+    }),
     references: (request: Request) => protectedResponse(request, (db) => references(db)),
     vehicles: (request: Request) => protectedResponse(request, (db, user) => listVehicles(db, user.id)),
     vehicle: (request: Request, id: string) => protectedResponse(request,

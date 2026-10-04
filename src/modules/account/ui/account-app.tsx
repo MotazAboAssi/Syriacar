@@ -109,7 +109,7 @@ function RegisterPage() {
     setBusy(true);
     try { const state = await accountApi.register({name:name.trim(), phone, password}); goOtp(router,state); }
     catch (reason) {
-      if (reason instanceof AccountApiError && reason.status === 500 && reason.detail.otp) {
+      if (reason instanceof AccountApiError && [429,500,503].includes(reason.status) && reason.detail.otp) {
         saveOtpAttempt(reason.detail.otp);
         sessionStorage.setItem(otpErrorKey, genericError);
         router.push("/otp"); return;
@@ -202,7 +202,7 @@ function OtpPage() {
     catch(reason){
       setError(reason instanceof AccountApiError&&reason.status===500?genericError:errorMessage(reason));
       if(reason instanceof AccountApiError&&reason.detail.code==="otp_flow_invalid")setFlowInvalid(true);
-      else if(reason instanceof AccountApiError&&reason.status===500&&reason.detail.otp){
+      else if(reason instanceof AccountApiError&&[429,500,503].includes(reason.status)&&reason.detail.otp){
         // Only this explicit resend may adopt its replacement, even on send failure.
         saveOtpAttempt(reason.detail.otp);setAttemptId(reason.detail.otp.attemptId);setState(reason.detail.otp);
       }else void refresh(phone,attemptId,true);

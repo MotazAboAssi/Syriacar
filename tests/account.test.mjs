@@ -113,6 +113,7 @@ run("login generic failure, inactive only after correct password, fifth failure 
   for (let i = 1; i <= 5; i++) assert.equal((await wrong(p)).status, i < 5 ? 401 : 429);
   assert.equal((await parsed(await f.api.login(req("login", "POST", { phone: p, password })))).status, 429);
   f.advance(900000);
+  await f.expireRates();
   assert.equal((await parsed(await f.api.login(req("login", "POST", { phone: p, password })))).status, 200);
 });
 run("30-day sliding JWT, modified/expired cookie, disabled/deleted/missing users rejected", async f => {
@@ -215,16 +216,8 @@ run("account deletion atomically anonymizes user/vehicles, leaves all registered
   assert.equal((await f.register(p)).status, 201); assert.notEqual((await f.user(p)).id, user.id);
 });
 test("exact in-memory rate-limit constants and IP/phone/OTP isolation", () => {
-  assert.deepEqual(accountLimits, { registrationsPerIp: 5, registrationsPerPhone: 3, sendsPerPhone: 5,
-    windowMs: 3600000, failedLogins: 5, lockMs: 900000 });
-  const l = new AccountLimits();
-  for (let i = 0; i < 5; i++) l.registration("phone" + i, "ip", 0);
-  assert.throws(() => l.registration("other", "ip", 1), error => error.status === 429);
-  for (let i = 0; i < 3; i++) l.registration("same", "ip" + i, 0);
-  assert.throws(() => l.registration("same", "newip", 1), error => error.status === 429);
-  for (let i = 0; i < 5; i++) l.send("same", 0);
-  assert.throws(() => l.send("same", 1), error => error.status === 429);
-  l.send("other", 1); l.send("same", 3600000); l.registration("same", "newip", 3600000);
+  assert.deepEqual(accountLimits, { registrationsPerPhone: 3, sendsPerPhone: 5, verificationsPerPhone: 30,
+    deletionsPerAccount: 5, windowMs: 3600000, failedLogins: 5, lockMs: 900000 });
 });
 test("year derivation exact boundaries", () => {
   for (const [year, expected] of [[1970,"classic"],[1999,"classic"],[2000,"mid"],[2011,"mid"],[2012,"modern"],[2026,"modern"]])

@@ -4,6 +4,7 @@ import type { ApiError, VehicleInput } from "./contracts.ts";
 export class AccountError extends Error {
   // Internal response metadata; never part of the JSON detail.
   cookies: string[] = [];
+  retryAfter?: number;
   status: number;
   detail: ApiError;
   constructor(status: number, error: string, extra: Omit<ApiError, "error"> = {}) {

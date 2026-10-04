@@ -21,6 +21,10 @@ function key(runtime: AccountRuntime, purpose: string) {
   return createHmac("sha256", secret).update(`syriacar:account:${purpose}`).digest();
 }
 export const registrationKey = (runtime: AccountRuntime) => key(runtime, "registration-flow");
+export function rateLimitHash(scope: string, identity: string, runtime: AccountRuntime) {
+  return createHmac("sha256", key(runtime, "rate-limits"))
+    .update(JSON.stringify([scope, identity])).digest("hex");
+}
 export function newCode(runtime: AccountRuntime) {
   const value = runtime.code?.() ?? randomInt(0, 1_000_000).toString().padStart(6, "0");
   if (!/^\d{6}$/.test(value)) throw new Error("Invalid OTP generator");
