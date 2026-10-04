@@ -21,10 +21,10 @@ export async function inspectionSnapshot() {
 }
 
 /** Every fixture, API write and simulated stale state rolls back, even on failure. */
-export async function withInspectionFixture(check, { withoutContactPhone = false } = {}) {
+export async function withInspectionFixture(check, { withoutContactPhone = false, connection } = {}) {
   const rollback = new Error("ROLLBACK_GUEST_INSPECTION_FIXTURE");
   try {
-    await getDatabase().transaction(async (tx) => {
+    await (connection ?? getDatabase()).transaction(async (tx) => {
       const gov = randomUUID(), otherGov = randomUUID();
       const region = randomUUID(), otherRegion = randomUUID(), alternateRegion = randomUUID();
       const emptyRegion = randomUUID();

@@ -4,12 +4,15 @@ import * as s from "../../src/server/db/schema.ts";
 import { defaultWorkDays } from "../../src/server/db/schema/types.ts";
 import { towingHandlers } from "../../src/modules/guest-towing/http.ts";
 import { withInspectionFixture } from "./guest-inspection.mjs";
+import { withManualSeedIsolation } from "./manual-seed-isolation.mjs";
 
 export const noon = new Date("2026-10-04T09:00:00Z");
 export const runtime = { now: () => noon };
 
 export async function withTowingFixture(check) {
-  return withInspectionFixture(async (f) => {
+  // Section B intentionally includes all open providers, even outside the
+  // route. Isolate tests rather than filtering rules or touching real data.
+  return withManualSeedIsolation(connection => withInspectionFixture(async (f) => {
     const { tx } = f;
     await tx.update(s.providers).set({ status: "disabled" }).where(eq(s.providers.id, f.ids.towing));
     const otherBase = randomUUID(), extraDest = randomUUID(), otherBaseRegion = randomUUID();
@@ -48,5 +51,5 @@ export async function withTowingFixture(check) {
       guestName: "ضيف تحقق", guestPhone: "+963900000001", acceptedTerms: true };
     await check({ ...f, ids, otherBase, extraDest, otherBaseRegion, towType, input,
       api: towingHandlers(() => tx, runtime) });
-  }, { withoutContactPhone: true });
+  }, { withoutContactPhone: true, connection }));
 }

@@ -1,0 +1,94 @@
+We completed the manual acceptance test of Build 7 successfully.
+
+Now implement the next development-only test fixture slice: Provider Test Fixtures.
+
+Goal:
+Create deterministic, idempotent, development-only provider fixtures so we can manually test the existing registered and guest service-request flows end-to-end.
+
+STRICT CONSTRAINTS:
+1. Development/test only.
+2. Must be blocked in production.
+3. Do NOT modify the production business rules.
+4. Do NOT modify the database schema or create a migration.
+5. Do NOT modify Build 4, Build 5, Build 6, or Build 7 business logic unless strictly necessary for test-fixture compatibility.
+6. Do NOT add any real provider data.
+7. Do NOT add OTP/WhatsApp behavior.
+8. Do NOT add provider dashboard functionality.
+9. Do NOT add new matching rules.
+10. Fixtures must be idempotent and transactional.
+11. Running the seed twice must not duplicate providers, coverage, capabilities, or related rows.
+12. Existing real/development data must not be deleted or modified.
+13. Use clearly identifiable test-only provider names/numbers.
+14. Add automated tests proving production mode refuses the fixture seed and development mode is idempotent.
+15. Preserve all existing tests and acceptance behavior.
+
+Create enough provider fixtures to cover these scenarios:
+
+A) INSPECTION MATCHED PROVIDER
+- Active provider.
+- Open/working for the required test day.
+- Coverage includes the required inspection governorate + region.
+- Vehicle capabilities match the test vehicle.
+- Valid coordinates so it appears on the map.
+- Has providers.phone and providers.whatsapp_number with clearly fake test values suitable for development.
+- This provider must produce a Section A match.
+
+B) INSPECTION LIST-ONLY PROVIDER
+- Active/open provider.
+- Correct matching capabilities and locality.
+- NO valid coordinates.
+- Must still participate in matching.
+- Must appear as list-only, not as a map marker.
+- This proves missing coordinates do not affect matching.
+
+C) INSPECTION NO-MATCH PROVIDER
+- Active/open provider but intentionally incompatible with the selected test vehicle capability.
+- Must NOT become a suitable Section A match.
+- Do not invent or change matching rules to achieve this.
+
+D) TOWING SECTION A PROVIDER
+- Active/open provider.
+- Covers BOTH selected origin and destination governorates.
+- Must be eligible for Section A.
+- Valid coordinates.
+- Has a test WhatsApp number.
+
+E) TOWING SECTION B PROVIDER
+- Active/open provider.
+- Does NOT cover both selected governorates.
+- Must be contactable as Section B.
+- Valid coordinates or no coordinates is acceptable, but preferably give it valid coordinates so the map/list behavior can also be observed.
+- Has a test WhatsApp number.
+
+F) MULTI-PROVIDER TOWING CASE
+Ensure the fixture data allows the towing flow to return multiple eligible providers so we can verify:
+- one service_request
+- multiple notifications
+- Section A/B behavior
+- B-only => no_match
+- A notification => matched
+- a later B notification never downgrades matched to no_match.
+
+Use the existing seeded governorates/regions and existing seeded vehicle/reference data. Prefer the existing test users/vehicles where possible.
+
+Also add a short document:
+docs/manual-provider-test-fixtures.md
+
+The document must contain:
+- fixture names
+- what each fixture is intended to test
+- exact development seed command
+- how to reset/remove ONLY these fixtures if such a reset is needed
+- which existing test account/vehicle to use for each scenario
+- expected result for each scenario
+
+Before finishing:
+- Run the full automated test suite.
+- Run typecheck.
+- Run production build.
+- Run the existing DB verification/isolation checks.
+- Verify schema/table/column counts remain unchanged.
+- Verify reference seed remains unchanged.
+- Report exact test counts and any changed files.
+
+Do NOT commit or push to GitHub.

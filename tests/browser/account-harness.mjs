@@ -48,7 +48,11 @@ export async function accountBrowserFixture(browser, check, { width = 1280, path
     });
     try {
       await page.goto(appOrigin + path);
-      await check({ ...fixture, page, context, calls, drain: async () => { await queue; },
+      await check({ ...fixture, page, context, calls, drain: async () => {
+        // Wait for late hydration/auth requests as well as the queue captured now,
+        // before tests advance the server clock beyond a sliding session's expiry.
+        await page.waitForLoadState("networkidle"); await queue;
+      },
         setBeforeResponse: callback => { beforeResponse = callback; } });
       assert.equal(errors.length, 0, errors.map(error => error.message).join("\n"));
     } finally { await context.close(); await queue; }
@@ -74,7 +78,10 @@ export async function activateBrowser(f) {
 export async function addBrowserVehicle(f) {
   await f.page.goto(appOrigin + "/account/vehicles/new");
   await f.page.locator("#vehicle-group").waitFor();
-  await f.page.waitForFunction(id => [...document.querySelector("#vehicle-group").options].some(o => o.value === id), f.group.id);
+  await f.page.waitForFunction(id => {
+    const options = document.querySelector("#vehicle-group")?.options;
+    return options && [...options].some(o => o.value === id);
+  }, f.group.id);
   await f.page.selectOption("#vehicle-group", f.group.id);
   await f.page.selectOption("#vehicle-brand", f.brand.id);
   await f.page.fill("#vehicle-year", "2005");
