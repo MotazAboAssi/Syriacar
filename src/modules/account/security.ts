@@ -3,6 +3,7 @@ import { createHmac, randomInt, timingSafeEqual } from "node:crypto";
 import { hash, verify } from "@node-rs/argon2";
 import { jwtVerify, SignJWT } from "jose";
 import { AccountError, messages, uuid } from "./validation.ts";
+import type { RegistrationPreparation } from "./registration-preparation.ts";
 
 export const sessionDuration = 30 * 24 * 60 * 60;
 export const cookieName = "syriacar_user";
@@ -13,6 +14,9 @@ export interface AccountRuntime {
   code?: () => string;
   sleep?: (milliseconds: number) => Promise<void>;
   sender?: (phone: string, code: string) => Promise<import("./whapi.ts").SendOutcome>;
+  /** Server-only fixture seams; never read from request input. */
+  registrationPreparation?: RegistrationPreparation;
+  registrationHash?: (password: string) => Promise<string>;
 }
 export const now = (runtime: AccountRuntime) => runtime.now?.() ?? new Date();
 function key(runtime: AccountRuntime, purpose: string) {

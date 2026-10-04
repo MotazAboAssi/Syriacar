@@ -5,10 +5,11 @@ import type { InspectionConnection as Connection } from "../guest-inspection/ser
 import * as s from "../../server/db/schema.ts";
 import type { Profile } from "./contracts.ts";
 import { AccountError, credentials, messages, object, phone, uuid } from "./validation.ts";
-import { checkPassword, hashPassword, matchesCode, now, type AccountRuntime } from "./security.ts";
+import { checkPassword, matchesCode, now, type AccountRuntime } from "./security.ts";
 import { createChallenge, latestChallenge, lockChallenges, otpState, phoneLock, requireSuccessfulSend, sendChallenge, resendCooldown } from "./otp.ts";
 import { accountTransaction, getAccountLimits, type AccountLimits } from "./rate-limits.ts";
 import { invalidRegistrationFlow, registrationCookie, registrationMatches, type RegistrationProof } from "./registration-flow.ts";
+import { prepareRegistration } from "./registration-preparation.ts";
 
 export type User = typeof s.users.$inferSelect;
 export const profile = (user: User): Profile => ({
@@ -16,15 +17,20 @@ export const profile = (user: User): Profile => ({
 });
 export async function register(input: unknown, db: Connection, runtime: AccountRuntime, limits: AccountLimits) {
   const data = credentials(input, true);
-  const passwordHash = await hashPassword(data.password);
-  const challenge = await accountTransaction(db, async (tx) => {
+  const challenge = await prepareRegistration(db, runtime, async (tx, work) => {
     await phoneLock(tx, data.phone);
+    work.checkpoint();
     const [old] = await tx.select().from(s.users).where(eq(s.users.phone, data.phone)).for("update");
+    work.checkpoint();
     await lockChallenges(tx, data.phone);
+    work.checkpoint();
     const previous = await latestChallenge(tx, data.phone);
+    work.checkpoint();
     const duplicate = old?.isActive && !old.isDeleted;
     await limits.admit(tx, [limits.budget("registration", data.phone),
       ...(!duplicate ? [limits.budget("send", data.phone)] : [])], runtime);
+    work.checkpoint();
+    const passwordHash = await work.hash(data.password);
     if (duplicate) {
       await limits.cleanup(tx);
       return { error: new AccountError(409, messages.duplicate) };
@@ -35,8 +41,11 @@ export async function register(input: unknown, db: Connection, runtime: AccountR
       id: randomUUID(), name: data.name, phone: data.phone, passwordHash, isActive: false, isDeleted: false,
       createdAt: time, lastActiveAt: time,
     }).returning();
+    work.checkpoint();
     const { row, code } = await createChallenge(tx, data.phone, runtime, previous);
+    work.checkpoint();
     const cookie = await registrationCookie(row.id, user, runtime);
+    work.checkpoint();
     await limits.cleanup(tx);
     return { row, code, cookie };
   });

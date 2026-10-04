@@ -1,6 +1,6 @@
 import "server-only";
 import { drizzle } from "drizzle-orm/node-postgres";
-import { Pool } from "pg";
+import { Pool, type PoolClient } from "pg";
 import { readDatabaseConfig } from "../config/database.ts";
 import * as schema from "./schema.ts";
 
@@ -35,6 +35,41 @@ const runtime = globalThis as typeof globalThis & {
 export function getDatabase() {
   runtime.syriacarDatabase ??= createDatabase();
   return runtime.syriacarDatabase.db;
+}
+
+/** Drizzle pins this client for BEGIN..COMMIT even with transaction pooling.
+ * Never obtain a different/global pool when the caller injected a database.
+ */
+export function registrationTransactionClient(transaction: unknown) {
+  const client = (transaction as { session?: { client?: Partial<PoolClient> } })?.session?.client;
+  if (!client || typeof client.end !== "function" || typeof client.on !== "function" ||
+    typeof client.removeListener !== "function") {
+    throw new Error("Unsupported registration transaction client");
+  }
+  return client as PoolClient;
+}
+
+/** pg's query_timeout rejects before the wire operation necessarily finishes.
+ * Drizzle owns release(); discard a still-busy client BEFORE that release, not
+ * after another waiter may have borrowed it. Never release the checkout twice.
+ */
+export function guardRegistrationRelease(client: PoolClient, uncertain: () => void) {
+  // pg 8's deprecated public getters warn even for healthy releases. Read its
+  // current internal state explicitly; fail closed if an upgrade changes it.
+  const state = client as PoolClient & { _activeQuery?: unknown; _queryQueue?: unknown[] };
+  if (typeof client.release !== "function") return () => {};
+  if (!("_activeQuery" in state) || !Array.isArray(state._queryQueue)) {
+    throw new Error("Unsupported registration client state");
+  }
+  const original = client.release;
+  const guarded = (...args: Parameters<typeof original>) => {
+    if (state._activeQuery || state._queryQueue?.length) uncertain();
+    client.release = original;
+    original.apply(client, args);
+  };
+  client.release = guarded;
+  // Injected transactions/savepoints do not own the outer client's release.
+  return () => { if (client.release === guarded) client.release = original; };
 }
 
 /** CLI verification uses the same lazy pool, then releases it on completion. */
