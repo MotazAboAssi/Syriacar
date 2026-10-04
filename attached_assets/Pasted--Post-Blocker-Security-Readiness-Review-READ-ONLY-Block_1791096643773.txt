@@ -1,0 +1,151 @@
+مهمة جديدة — Post-Blocker Security & Readiness Review
+
+أريد مراجعة READ-ONLY فقط بعد اكتمال:
+- Blocker 1: Registration-flow takeover protection
+- Blocker 2: PostgreSQL account rate limiting
+- Blocker 3: Guest request abuse protection
+
+لا تبدأ Build.
+لا تعدّل أي ملف.
+لا تنشئ migration.
+لا تغيّر schema أو seed أو dependencies.
+لا تنشئ commit أو push.
+لا تنفذ عمليات business أو production deployment.
+
+الهدف:
+إعادة تدقيق المشروع كاملًا من منظور Production Security & Readiness، مع التركيز أولًا على أن الإصلاحات الثلاثة أغلقت الـHIGH blockers التي حددتها المراجعة السابقة، وأنها لم تخلق deadlocks أو bypasses أو regressions.
+
+افحص تحديدًا:
+
+1. Blocker 1
+- registration attempt/page binding
+- signed registration proof
+- OTP challenge binding
+- inactive-account continuation
+- concurrent verification
+- multiple tabs / stale attempts
+- resend behavior
+- activation transaction
+- inability to activate attacker-chosen credentials using another user's OTP
+
+2. Blocker 2
+- PostgreSQL shared rate limits
+- atomic admission
+- persistence across processes/connections
+- login/registration/OTP/delete limits
+- lock ordering and deadlock risks
+- quota denial rollback
+- retry behavior
+- DB failure fail-closed behavior
+- Whapi network calls outside transactions
+- no codeHash mutation when retry quota is denied
+
+3. Blocker 3
+- guest.parent.phone = 10/hour
+- guest.parent.global = 20 new Guest service_requests/hour application-wide
+- guest.notification.phone = 40/hour
+- Inspection and Towing share the same budgets
+- no-match inspection consumes only parent quotas
+- existing towing parent notification consumes only notification quota
+- global parent quota does not block notifications on existing requests
+- no IP assumptions
+- quota and business writes are atomic
+- concurrency across independent DB connections/processes
+- rollback on 429/503/commit failure
+- no quota bypass through provider/serviceType/headers/phone rotation beyond the explicitly accepted limits
+
+4. Authentication / authorization / IDOR / BOLA
+- registered user ownership checks
+- vehicle ownership
+- rejected vehicle restrictions
+- request/provider proof validation
+- deleted/inactive accounts
+- JWT/session handling
+- protected routes
+- account deletion and re-registration
+- privilege escalation
+
+5. Guest Inspection / Guest Towing
+- validation
+- request proof
+- duplicate/replay behavior
+- provider selection
+- matching_status integrity
+- notification creation
+- transaction boundaries
+- resource exhaustion risks remaining after Blocker 3
+
+6. Whapi
+- token remains server-only
+- callback secret
+- provider_message_id binding
+- stale callback protection
+- retry limits
+- no OTP/code/hash/token leakage
+- production webhook readiness
+
+7. Database
+- constraints
+- foreign keys
+- unique constraints
+- indexes
+- transaction correctness
+- schema/catalog consistency
+- migrations
+- audit logging
+- deletion/anonymization behavior
+
+8. Production configuration
+- required environment variables
+- secret handling
+- NODE_ENV
+- deployment assumptions
+- trusted client-IP status
+- production database cleanliness
+- development/manual/provider fixtures protection
+- whether any production-only configuration is still unresolved
+
+9. Security headers / browser security
+- CSRF posture
+- Origin/Host validation
+- cookie flags
+- SameSite
+- CSP/security headers
+- body limits
+- JSON parsing
+- XSS exposure
+- open redirects
+- sensitive data in sessionStorage/localStorage
+- error leakage
+
+10. Remaining risks
+Separate findings into:
+- BLOCKER / HIGH
+- MEDIUM
+- LOW
+- INFO
+
+For every finding provide:
+- exact file/path and relevant code location
+- attack/impact
+- whether it is genuinely production-blocking
+- recommended fix
+- whether schema/migration is required
+- whether it should be fixed before Operations/Super Admin/Provider Management
+- whether it can safely be deferred until final production hardening
+
+Also explicitly compare against the previous security audit findings and state:
+
+A) Which previous HIGH blockers are now CLOSED.
+B) Which previous MEDIUM/LOW/INFO findings remain.
+C) Any NEW HIGH/MEDIUM findings introduced by Blocker 1/2/3.
+D) Final verdict:
+   - READY FOR NEXT PRODUCT IMPLEMENTATION
+   - READY AFTER FIXES
+   - NOT READY
+
+Important:
+This is a PLAN/REVIEW only.
+Do not modify code or database.
+Do not start Build even if you find fixes.
+Do not propose unrelated feature work.
