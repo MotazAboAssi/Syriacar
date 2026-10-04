@@ -1,0 +1,112 @@
+مهمة جديدة — Post-Blocker Security Fix Plan
+
+نريد التخطيط فقط لإغلاق نتيجتي المراجعة الأمنية الأخيرة قبل متابعة وظائف الإدارة.
+
+لا تبدأ Build.
+لا تعدّل أي ملف.
+لا تنشئ migration.
+لا تغيّر schema.
+لا تضف dependencies.
+لا تعمل seed أو database writes.
+لا commit ولا push.
+
+النطاق محصور في نتيجتين:
+
+1. Account request body / transaction resource exhaustion
+2. Registration Argon2 cost before rate-limit rejection
+
+## Fix 1 — Body read before transaction
+
+المراجعة وجدت أن بعض Account mutations قد تبدأ transaction/locks ثم تنتظر قراءة request body.
+
+المواقع التي يجب مراجعتها:
+- src/modules/account/http.ts
+- src/server/db/client.ts
+
+الهدف:
+- قراءة body والتحقق من JSON/body size قبل فتح transaction.
+- إضافة deadline/timeout فعلي لقراءة body إذا كان ذلك ممكنًا ضمن Next.js Request API الحالي.
+- عدم الاعتماد على statement_timeout أو query_timeout لحماية فترة انتظار body.
+- ضمان عدم إبقاء DB connection/transaction محتجزة أثناء انتظار body.
+- الحفاظ على حد 8192 bytes الحالي.
+- الحفاظ على Origin/Host validation والسلوك الحالي.
+- الحفاظ على رسائل الأخطاء الحالية قدر الإمكان.
+- لا تفترض عقدًا غير مثبت من Replit ingress.
+- لا تضف IP logic.
+- لا تغيّر business behavior.
+
+يجب تدقيق جميع Account mutation paths، وليس registration فقط، لمعرفة أيها يقرأ body بعد فتح transaction أو بعد acquisition لاتصال DB.
+
+## Fix 2 — Registration hashing before quota rejection
+
+المراجعة وجدت أن registration الحالي قد ينفذ Argon2 قبل رفض registration quota.
+
+الهدف:
+- إذا كانت registration quota مستنفدة، يجب رفض الطلب قبل العمل المكلف Argon2.
+- لا نريد إضعاف admission الذري النهائي.
+- لا نريد check-then-use race.
+- لا نريد نقل Argon2 إلى transaction طويلة.
+- يجب الحفاظ على صحة fingerprint/registration-flow proof وBlocker 1.
+- يجب الحفاظ على عدم وجود bypass للحصة عبر السباقات.
+- يجب الحفاظ على السلوك الحالي عند قبول الطلب.
+- يجب تحديد كيف نتعامل مع registration quota admission مقابل الحاجة إلى password hash قبل إنشاء/تحديث challenge.
+- لا نريد حجز quota ثم تركها بلا عملية صحيحة بسبب فشل hashing.
+- لا نريد refund/rollback تصميمًا يكسر atomicity.
+- يجب دراسة ترتيب العمليات والأقفال الموجود حاليًا قبل اقتراح الحل.
+
+## مهم جدًا
+
+لا تفترض أن الحل هو مجرد:
+"اعمل rate-limit check ثم Argon2 ثم admission مرة ثانية."
+
+حلل race/concurrency والـlock ordering أولًا.
+
+أي حل يجب أن يوضح:
+- أين يتم admission الأولي إن لزم.
+- متى يتم Argon2.
+- كيف نضمن أن الطلب الذي اجتاز الحصة يستطيع إكمال العملية.
+- ماذا يحدث عند فشل Argon2.
+- ماذا يحدث عند وصول طلبين متزامنين لنفس الهاتف.
+- ماذا يحدث عند انتهاء window أثناء hashing.
+- كيف يبقى Blocker 1 registration fingerprint صحيحًا.
+- هل يلزم تعديل limiter API أم يمكن حل المشكلة داخل account service.
+
+## الاختبارات المطلوبة في الخطة
+
+Fix 1:
+- body slow/incomplete behavior إن كان قابلًا للاختبار دون افتراض ingress.
+- إثبات أن DB transaction لا تبدأ قبل اكتمال body parsing.
+- body >8192.
+- malformed JSON.
+- جميع Account mutations ذات body.
+- regression للـregistration/login/OTP/delete.
+
+Fix 2:
+- exhausted quota rejects without Argon2 work.
+- quota boundary.
+- concurrent registrations for same phone.
+- concurrent different phones.
+- hashing failure behavior.
+- registration proof/fingerprint regression.
+- Blocker 1 regression.
+- Blocker 2 regression.
+- لا quota leaks أو bypasses.
+- لا تغيّر سلوك OTP/Whapi.
+
+## المطلوب في الناتج
+
+أعطني PLAN فقط يتضمن:
+
+1. verdict لكل إصلاح.
+2. السبب الفني.
+3. الملفات التي ستتغير.
+4. الترتيب الدقيق للعمليات والأقفال.
+5. أي تعديل مطلوب في Account Rate Limiter API.
+6. هل يحتاج schema/migration/dependency.
+7. كيف ستمنع quota bypass وquota leakage.
+8. الاختبارات المطلوبة.
+9. المخاطر أو النقاط التي تحتاج قرارًا مني.
+
+إذا كان أي حل يتطلب تغيير schema أو migration أو dependency، توقف واذكره بدل افتراض الموافقة.
+
+لا تبدأ Build.
