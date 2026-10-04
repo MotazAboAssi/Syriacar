@@ -1,0 +1,58 @@
+We have confirmed that PostgreSQL session affinity outside transactions is NOT established.
+
+Do NOT build anything yet.
+
+Design a production-safe alternative for Security Fix 2 only:
+
+"Prevent Argon2 password hashing during an already-exhausted registration quota."
+
+Requirements:
+
+1. Do NOT assume PostgreSQL session affinity outside transactions.
+2. Do NOT use session-level advisory locks unless you can prove they are safe with the actual current pooling architecture.
+3. Do NOT make a simple check-then-hash-then-admit design; it must be race-safe.
+4. Do NOT change the existing security_rate_limits schema unless the alternative genuinely requires it. If a schema change is required, explain exactly why before proposing it.
+5. Preserve the already-approved registration quota semantics:
+   - 3 registrations/hour per normalized phone.
+   - PostgreSQL time is authoritative.
+   - Atomic admission.
+   - No quota leakage.
+   - Concurrent attempts for the same phone must not bypass the limit.
+6. Preserve the existing registration takeover fix.
+7. Do not weaken the existing OTP/registration security model.
+8. Do not hold a DB transaction open while reading the HTTP request body.
+9. Consider the current PostgreSQL pool max=5 and the Replit deployment model.
+10. Avoid introducing a new dependency unless strictly necessary.
+
+Evaluate at least these architectural possibilities if applicable:
+- transaction-scoped advisory locking around the critical registration preparation/hash path;
+- using the existing security_rate_limits row itself as a reservation/admission mechanism;
+- another PostgreSQL-atomic design using the existing table;
+- a minimal schema extension only if there is no safe alternative.
+
+For each viable design, provide:
+- exact race/concurrency behavior;
+- what happens with two concurrent registrations for the same phone;
+- what happens when the quota is already exhausted;
+- whether Argon2 runs before or after quota admission;
+- connection/transaction lifetime;
+- impact on the pool of 5;
+- failure/rollback behavior;
+- whether it works with transaction pooling;
+- whether it preserves current retry/OTP behavior;
+- required files and whether migration is needed;
+- tests required.
+
+Then recommend ONE design.
+
+Important:
+- Plan only.
+- No code changes.
+- No migration.
+- No build.
+- No commit.
+- No push.
+- Do not solve Fix 1 or any other security finding.
+- End with exactly one of:
+  READY FOR BUILD
+  NEEDS ANOTHER DESIGN DECISION
