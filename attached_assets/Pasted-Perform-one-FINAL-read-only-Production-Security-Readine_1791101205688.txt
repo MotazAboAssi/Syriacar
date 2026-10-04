@@ -1,0 +1,56 @@
+Perform one FINAL read-only Production Security & Readiness Review of the current Syriacar codebase.
+
+Context:
+- Security Fix 2 is implemented:
+  registration quota admission + Argon2 + registration writes are atomic inside one bounded transaction; no session affinity assumption; 244 server tests passed.
+- Security Fix 1 is implemented:
+  request bodies are fully read and validated before DB connection/transaction/lock; 8192-byte limit; 10-second total body-read deadline; 272 server tests and 66 browser tests passed.
+- Do not modify any files.
+- Do not build features.
+- Do not create migrations.
+- Do not seed data.
+- Do not commit or push.
+
+Review specifically whether the previous Production Security & Readiness findings are now closed.
+
+Priority:
+1. Confirm the three original HIGH blockers remain closed:
+   - registration takeover/incomplete-account replacement;
+   - persistent/shared account rate limiting;
+   - guest request abuse/rate limiting.
+2. Confirm Security Fix 2 does not introduce:
+   - quota leakage;
+   - race/bypass;
+   - deadlocks or lock-order inversion;
+   - pool exhaustion;
+   - unsafe connection reuse after timeout;
+   - late Argon2 writes;
+   - regression in Blocker 1.
+3. Confirm Security Fix 1 does not leave any mutation path reading request bodies while holding a DB transaction/lock.
+4. Review all remaining findings from the previous audit:
+   - registered-user write quotas;
+   - JSON provider_message_id/challenge-history growth;
+   - CSP/security headers;
+   - JWT logout/revocation limitation;
+   - sessionStorage exposure;
+   - guest proof replay/idempotency;
+   - GET/location resource abuse;
+   - production/Whapi operational readiness;
+   - production DB cleanliness and dev-fixture protection.
+5. Distinguish clearly between:
+   - production blockers;
+   - recommended pre-launch hardening;
+   - accepted policy/architecture limitations;
+   - post-launch improvements.
+6. Verify current test/build/catalog evidence without changing it.
+7. Check whether any NEW HIGH or CRITICAL issue exists.
+
+Do not propose speculative redesigns.
+Do not create a new architecture unless an actual blocker is found.
+
+Final verdict must be exactly one of:
+READY FOR NEXT IMPLEMENTATION PHASE
+or
+NOT READY — BLOCKER FOUND
+
+If NOT READY, list only the concrete blocker(s), evidence, and the smallest required next action.
